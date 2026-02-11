@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import GraphicsLayer from "@arcgis/core/layers/GraphicsLayer";
 import Graphic from "@arcgis/core/Graphic";
 import Point from "@arcgis/core/geometry/Point";
@@ -18,7 +18,6 @@ interface UseMapGraphicsReturn {
     view: __esri.MapView,
     map: __esri.Map,
     features: Feature[],
-    dataset: Dataset,
     index: number
   ) => void;
   clearGraphics: (map: __esri.Map) => void;
@@ -27,64 +26,104 @@ interface UseMapGraphicsReturn {
 const RESULTS_LAYER_ID = "geoassist-results";
 const HIGHLIGHT_LAYER_ID = "geoassist-highlight";
 
-function getCoordinates(feature: Feature): [number, number] | null {
-  if (feature.geometry?.x && feature.geometry?.y) {
-    const lat = feature.geometry.y;
-    const lng = feature.geometry.x;
-    if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-      return [lng, lat];
-    }
-  }
-  const attrs = feature.attributes;
-  if (attrs.LATITUDE && attrs.LONGITUDE) {
-    return [attrs.LONGITUDE as number, attrs.LATITUDE as number];
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
   }
   return null;
 }
 
-function buildPopupContent(feature: Feature, _dataset: Dataset): string {
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function toStringValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
+function formatNumericValue(value: unknown): string | null {
+  const parsed = toFiniteNumber(value);
+  return parsed === null ? null : parsed.toLocaleString();
+}
+
+function getFeatureName(feature: Feature): string {
+  const name = feature.attributes.NAME ?? feature.attributes.name;
+  return toStringValue(name).trim() || "Unknown";
+}
+
+function getCoordinates(feature: Feature): [number, number] | null {
+  if (feature.geometry) {
+    const lat = toFiniteNumber(feature.geometry.y);
+    const lng = toFiniteNumber(feature.geometry.x);
+    if (lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      return [lng, lat];
+    }
+  }
+
+  const attrs = feature.attributes;
+  const lat = toFiniteNumber(attrs.LATITUDE);
+  const lng = toFiniteNumber(attrs.LONGITUDE);
+  if (lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+    return [lng, lat];
+  }
+
+  return null;
+}
+
+function buildPopupContent(feature: Feature): string {
   const a = feature.attributes;
-  const name = (a.NAME || a.name || "Unknown") as string;
-  const city = (a.CITY || "") as string;
-  const state = (a.STATE || a.ST || "") as string;
+  const name = escapeHtml(getFeatureName(feature));
+  const city = escapeHtml(toStringValue(a.CITY).trim());
+  const state = escapeHtml(toStringValue(a.STATE ?? a.ST).trim());
+  const trauma = toStringValue(a.TRAUMA).trim();
+  const helipad = toStringValue(a.HELIPAD).trim();
+  const owner = toStringValue(a.OWNER).trim();
+  const type = toStringValue(a.TYPE).trim();
+  const level = toStringValue(a.LEVEL_).trim();
+  const phone = toStringValue(a.TELEPHONE).trim();
+  const beds = formatNumericValue(a.BEDS);
+  const enrollment = formatNumericValue(a.ENROLLMENT);
+  const teachers = formatNumericValue(a.FT_TEACHER);
+  const population = formatNumericValue(a.POP_2010);
+  const medianAge = formatNumericValue(a.MED_AGE);
 
   let content = `<b>${name}</b><br/>${city}${state ? ", " + state : ""}`;
 
-  if (a.BEDS) content += `<br/>Beds: <b>${a.BEDS}</b>`;
-  if (a.TRAUMA && a.TRAUMA !== "NOT AVAILABLE")
-    content += `<br/>Trauma: <b>${a.TRAUMA}</b>`;
-  if (a.HELIPAD) content += `<br/>Helipad: <b>${a.HELIPAD}</b>`;
-  if (a.OWNER) content += `<br/>Owner: <b>${a.OWNER}</b>`;
-  if (a.TYPE) content += `<br/>Type: <b>${a.TYPE}</b>`;
-  if (a.ENROLLMENT)
-    content += `<br/>Students: <b>${(a.ENROLLMENT as number).toLocaleString()}</b>`;
-  if (a.FT_TEACHER) content += `<br/>Teachers: <b>${a.FT_TEACHER}</b>`;
-  if (a.LEVEL_) content += `<br/>Level: <b>${a.LEVEL_}</b>`;
-  if (a.POP_2010)
-    content += `<br/>Population: <b>${(a.POP_2010 as number).toLocaleString()}</b>`;
-  if (a.MED_AGE) content += `<br/>Median Age: <b>${a.MED_AGE}</b>`;
+  if (beds) content += `<br/>Beds: <b>${escapeHtml(beds)}</b>`;
+  if (trauma && trauma !== "NOT AVAILABLE") {
+    content += `<br/>Trauma: <b>${escapeHtml(trauma)}</b>`;
+  }
+  if (helipad) content += `<br/>Helipad: <b>${escapeHtml(helipad)}</b>`;
+  if (owner) content += `<br/>Owner: <b>${escapeHtml(owner)}</b>`;
+  if (type) content += `<br/>Type: <b>${escapeHtml(type)}</b>`;
+  if (enrollment) content += `<br/>Students: <b>${escapeHtml(enrollment)}</b>`;
+  if (teachers) content += `<br/>Teachers: <b>${escapeHtml(teachers)}</b>`;
+  if (level) content += `<br/>Level: <b>${escapeHtml(level)}</b>`;
+  if (population) content += `<br/>Population: <b>${escapeHtml(population)}</b>`;
+  if (medianAge) content += `<br/>Median Age: <b>${escapeHtml(medianAge)}</b>`;
   if (a.CAPITAL === "Y") content += `<br/><b>State Capital</b>`;
-  if (a.TELEPHONE) content += `<br/>Phone: ${a.TELEPHONE}`;
+  if (phone) content += `<br/>Phone: ${escapeHtml(phone)}`;
 
   return content;
 }
 
 export function useMapGraphics(): UseMapGraphicsReturn {
-  const graphicsLayerRef = useRef<GraphicsLayer | null>(null);
-  const highlightLayerRef = useRef<GraphicsLayer | null>(null);
-
-  const getOrCreateLayer = useCallback(
-    (map: __esri.Map, id: string, ref: React.RefObject<GraphicsLayer | null>): GraphicsLayer => {
-      let layer = map.findLayerById(id) as GraphicsLayer | undefined;
-      if (!layer) {
-        layer = new GraphicsLayer({ id });
-        map.add(layer);
-      }
-      ref.current = layer;
-      return layer;
-    },
-    []
-  );
+  const getOrCreateLayer = useCallback((map: __esri.Map, id: string): GraphicsLayer => {
+    let layer = map.findLayerById(id) as GraphicsLayer | undefined;
+    if (!layer) {
+      layer = new GraphicsLayer({ id });
+      map.add(layer);
+    }
+    return layer;
+  }, []);
 
   const clearGraphics = useCallback(
     (map: __esri.Map) => {
@@ -103,8 +142,8 @@ export function useMapGraphics(): UseMapGraphicsReturn {
       features: Feature[],
       dataset: Dataset
     ) => {
-      const layer = getOrCreateLayer(map, RESULTS_LAYER_ID, graphicsLayerRef);
-      const highlightLayer = getOrCreateLayer(map, HIGHLIGHT_LAYER_ID, highlightLayerRef);
+      const layer = getOrCreateLayer(map, RESULTS_LAYER_ID);
+      const highlightLayer = getOrCreateLayer(map, HIGHLIGHT_LAYER_ID);
       layer.removeAll();
       highlightLayer.removeAll();
 
@@ -125,7 +164,8 @@ export function useMapGraphics(): UseMapGraphicsReturn {
           outline: { color: "white", width: 1.5 },
         });
 
-        const name = (feature.attributes.NAME || feature.attributes.name || "Unknown") as string;
+        const name = getFeatureName(feature);
+        const popupContent = buildPopupContent(feature);
 
         const graphic = new Graphic({
           geometry: point,
@@ -133,7 +173,7 @@ export function useMapGraphics(): UseMapGraphicsReturn {
           attributes: { ...feature.attributes, _index: index },
           popupTemplate: new PopupTemplate({
             title: name,
-            content: buildPopupContent(feature, dataset),
+            content: popupContent,
           }),
         });
 
@@ -156,10 +196,9 @@ export function useMapGraphics(): UseMapGraphicsReturn {
       view: __esri.MapView,
       map: __esri.Map,
       features: Feature[],
-      dataset: Dataset,
       index: number
     ) => {
-      const highlightLayer = getOrCreateLayer(map, HIGHLIGHT_LAYER_ID, highlightLayerRef);
+      const highlightLayer = getOrCreateLayer(map, HIGHLIGHT_LAYER_ID);
       highlightLayer.removeAll();
 
       const feature = features[index];
@@ -179,7 +218,8 @@ export function useMapGraphics(): UseMapGraphicsReturn {
         outline: { color: "white", width: 2.5 },
       });
 
-      const name = (feature.attributes.NAME || feature.attributes.name || "Unknown") as string;
+      const name = getFeatureName(feature);
+      const popupContent = buildPopupContent(feature);
 
       const labelSymbol = new TextSymbol({
         text: name,
@@ -197,7 +237,7 @@ export function useMapGraphics(): UseMapGraphicsReturn {
           attributes: feature.attributes,
           popupTemplate: new PopupTemplate({
             title: name,
-            content: buildPopupContent(feature, dataset),
+            content: popupContent,
           }),
         }),
         new Graphic({ geometry: point, symbol: labelSymbol }),
@@ -206,7 +246,7 @@ export function useMapGraphics(): UseMapGraphicsReturn {
       view.goTo({ target: point, zoom: Math.max(view.zoom, 8) }, { duration: 500 }).catch(() => {});
       view.openPopup({
         title: name,
-        content: buildPopupContent(feature, dataset),
+        content: popupContent,
         location: point,
       });
     },

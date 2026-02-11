@@ -10,7 +10,6 @@ interface MapPanelProps {
   dataset: Dataset | null;
   selectedIndex: number | null;
   darkMode: boolean;
-  onViewReady: (view: __esri.MapView, map: __esri.Map) => void;
 }
 
 export function MapPanel({
@@ -18,24 +17,19 @@ export function MapPanel({
   dataset,
   selectedIndex,
   darkMode,
-  onViewReady,
 }: MapPanelProps) {
   const mapRef = useRef<HTMLArcgisMapElement>(null);
   const viewRef = useRef<__esri.MapView | null>(null);
   const mapObjRef = useRef<__esri.Map | null>(null);
   const { displayResults, highlightResult, clearGraphics } = useMapGraphics();
 
-  const handleViewReady = useCallback(
-    (event: Event) => {
-      const el = event.target as HTMLArcgisMapElement;
-      if (el.view && el.map) {
-        viewRef.current = el.view as __esri.MapView;
-        mapObjRef.current = el.map as __esri.Map;
-        onViewReady(el.view as __esri.MapView, el.map as __esri.Map);
-      }
-    },
-    [onViewReady]
-  );
+  const handleViewReady = useCallback((event: Event) => {
+    const el = event.target as HTMLArcgisMapElement;
+    if (el.view && el.map) {
+      viewRef.current = el.view as __esri.MapView;
+      mapObjRef.current = el.map as __esri.Map;
+    }
+  }, []);
 
   useEffect(() => {
     const el = mapRef.current;
@@ -62,10 +56,10 @@ export function MapPanel({
   useEffect(() => {
     const view = viewRef.current;
     const map = mapObjRef.current;
-    if (!view || !map || !features || !dataset || selectedIndex === null) return;
+    if (!view || !map || !features || selectedIndex === null) return;
 
-    highlightResult(view, map, features, dataset, selectedIndex);
-  }, [selectedIndex, features, dataset, highlightResult]);
+    highlightResult(view, map, features, selectedIndex);
+  }, [selectedIndex, features, highlightResult]);
 
   const basemap = darkMode ? "dark-gray-vector" : "streets-vector";
 

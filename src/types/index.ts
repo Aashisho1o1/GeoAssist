@@ -31,7 +31,7 @@ export interface FeatureGeometry {
 
 export interface Feature {
   attributes: FeatureAttributes;
-  geometry: FeatureGeometry;
+  geometry?: FeatureGeometry | null;
 }
 
 export interface ChatMessage {

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { Suspense, lazy, useState, useCallback, useRef, useEffect } from "react";
 
 import "@esri/calcite-components/dist/calcite/calcite.css";
 import { setAssetPath } from "@esri/calcite-components";
@@ -25,19 +25,21 @@ import "@esri/calcite-components/dist/components/calcite-list-item";
 import "@esri/calcite-components/dist/components/calcite-loader";
 import "@esri/calcite-components/dist/components/calcite-accordion";
 import "@esri/calcite-components/dist/components/calcite-accordion-item";
-import "@esri/calcite-components/dist/components/calcite-tooltip";
 import "@esri/calcite-components/dist/components/calcite-dialog";
 import "@esri/calcite-components/dist/components/calcite-label";
 
 import type { Dataset, Feature, ChatMessage, LLMQueryResult } from "./types";
 import { DatasetSelector } from "./components/DatasetSelector";
 import { ChatPanel } from "./components/ChatPanel";
-import { MapPanel } from "./components/MapPanel";
 import { ResultsList } from "./components/ResultsList";
 import { QueryInspector } from "./components/QueryInspector";
 import { ExampleQuestions } from "./components/ExampleQuestions";
 import { useLLMTranslation } from "./hooks/useLLMTranslation";
 import { useArcGISQuery } from "./hooks/useArcGISQuery";
+
+const MapPanel = lazy(() =>
+  import("./components/MapPanel").then((module) => ({ default: module.MapPanel }))
+);
 
 function App() {
   const [darkMode, setDarkMode] = useState(true);
@@ -51,10 +53,9 @@ function App() {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("geoassist_api_key") || "");
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
 
-  const viewRef = useRef<__esri.MapView | null>(null);
-  const mapObjRef = useRef<__esri.Map | null>(null);
-  const inputRef = useRef<HTMLCalciteInputTextElement | null>(null);
   const liveRegionRef = useRef<HTMLDivElement | null>(null);
+  const latestRequestIdRef = useRef(0);
+  const isSearchInFlightRef = useRef(false);
 
   const { translate, loading: llmLoading } = useLLMTranslation(apiKey);
   const { executeQuery, loading: queryLoading } = useArcGISQuery();
@@ -81,11 +82,6 @@ function App() {
     }
   }, []);
 
-  const handleViewReady = useCallback((view: __esri.MapView, map: __esri.Map) => {
-    viewRef.current = view;
-    mapObjRef.current = map;
-  }, []);
-
   const handleDatasetSelect = useCallback((dataset: Dataset) => {
     setSelectedDataset(dataset);
     setFeatures(null);
@@ -107,12 +103,15 @@ function App() {
   const handleSearch = useCallback(
     async (searchText?: string) => {
       const question = searchText || queryText;
-      if (!question.trim() || !selectedDataset) return;
+      if (!question.trim() || !selectedDataset || loading || isSearchInFlightRef.current) return;
       if (!apiKey) {
         setShowApiKeyDialog(true);
         return;
       }
 
+      isSearchInFlightRef.current = true;
+      const requestId = latestRequestIdRef.current + 1;
+      latestRequestIdRef.current = requestId;
       setIsProcessing(true);
       setQueryText("");
       setSelectedIndex(null);
@@ -122,9 +121,11 @@ function App() {
 
       try {
         const queryParams = await translate(question, selectedDataset);
+        if (requestId !== latestRequestIdRef.current) return;
         setCurrentQuery(queryParams);
 
         const results = await executeQuery(selectedDataset, queryParams);
+        if (requestId !== latestRequestIdRef.current) return;
         setFeatures(results);
 
         const summaryText =
@@ -143,6 +144,7 @@ function App() {
             : "No results found. Try a different question."
         );
       } catch (err) {
+        if (requestId !== latestRequestIdRef.current) return;
         const message = err instanceof Error ? err.message : "An error occurred";
         setChatHistory((prev) => [
           ...prev,
@@ -150,10 +152,13 @@ function App() {
         ]);
         announceToScreenReader(`Error: ${message}`);
       } finally {
-        setIsProcessing(false);
+        if (requestId === latestRequestIdRef.current) {
+          isSearchInFlightRef.current = false;
+          setIsProcessing(false);
+        }
       }
     },
-    [queryText, selectedDataset, apiKey, translate, executeQuery, announceToScreenReader]
+    [queryText, selectedDataset, loading, apiKey, translate, executeQuery, announceToScreenReader]
   );
 
   const handleResultSelect = useCallback((index: number) => {
@@ -316,7 +321,6 @@ function App() {
                   }}
                 >
                   <calcite-input-text
-                    ref={inputRef}
                     placeholder={`Ask about ${selectedDataset.label}...`}
                     value={queryText}
                     disabled={loading || undefined}
@@ -347,13 +351,28 @@ function App() {
         </calcite-shell-panel>
 
         {/* Map */}
-        <MapPanel
-          features={features}
-          dataset={selectedDataset}
-          selectedIndex={selectedIndex}
-          darkMode={darkMode}
-          onViewReady={handleViewReady}
-        />
+        <Suspense
+          fallback={
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                display: "grid",
+                placeItems: "center",
+                background: "var(--calcite-color-foreground-1)",
+              }}
+            >
+              <calcite-loader label="Loading map..." />
+            </div>
+          }
+        >
+          <MapPanel
+            features={features}
+            dataset={selectedDataset}
+            selectedIndex={selectedIndex}
+            darkMode={darkMode}
+          />
+        </Suspense>
       </calcite-shell>
     </>
   );
