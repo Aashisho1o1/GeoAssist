@@ -23,7 +23,7 @@ export const DATASETS: Dataset[] = [
       "Which hospitals have helipads in Florida?",
       "Show me government-owned hospitals in New York",
     ],
-    icon: "hospital",
+    icon: "map-pin",
     color: "#e74c3c",
   },
   {
