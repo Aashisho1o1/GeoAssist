@@ -1,4 +1,5 @@
-import type { Feature, Dataset } from "../types";
+import type { Feature, Dataset, FeatureAttributes } from "../types";
+import { displayValue, featureLocation, featureName } from "../lib/format";
 
 interface ResultsListProps {
   features: Feature[];
@@ -7,30 +8,18 @@ interface ResultsListProps {
   onSelect: (index: number) => void;
 }
 
+function withUnit(value: FeatureAttributes[string] | undefined, unit: string): string {
+  const text = displayValue(value);
+  return text && `${text} ${unit}`;
+}
+
 function getSubtitle(feature: Feature, dataset: Dataset): string {
   const a = feature.attributes;
-  const city = (a.CITY || "") as string;
-  const state = (a.STATE || a.ST || "") as string;
-  const parts: string[] = [];
-
-  if (city) parts.push(city);
-  if (state) parts.push(state);
-
-  const location = parts.join(", ");
-  const details: string[] = [];
-
-  if (dataset.id === "hospitals") {
-    if (a.BEDS) details.push(`${a.BEDS} beds`);
-    if (a.TRAUMA && a.TRAUMA !== "NOT AVAILABLE") details.push(String(a.TRAUMA));
-  } else if (dataset.id === "schools") {
-    if (a.ENROLLMENT) details.push(`${(a.ENROLLMENT as number).toLocaleString()} students`);
-    if (a.LEVEL_) details.push(String(a.LEVEL_));
-  } else if (dataset.id === "cities") {
-    if (a.POP_2010) details.push(`Pop: ${(a.POP_2010 as number).toLocaleString()}`);
-    if (a.CAPITAL === "Y") details.push("Capital");
-  }
-
-  return [location, ...details].filter(Boolean).join(" | ");
+  const details =
+    dataset.id === "hospitals" ? [withUnit(a.BEDS, "beds"), displayValue(a.TRAUMA)]
+    : dataset.id === "schools" ? [withUnit(a.ENROLLMENT, "students"), displayValue(a.LEVEL_)]
+    : [withUnit(a.POPULATION, "people"), a.CAPITAL ? `${a.CAPITAL} capital` : ""];
+  return [featureLocation(feature), ...details].filter(Boolean).join(" | ");
 }
 
 export function ResultsList({
@@ -54,9 +43,7 @@ export function ResultsList({
         aria-label={`${features.length} results found`}
       >
         {features.map((feature, i) => {
-          const name = (feature.attributes.NAME ||
-            feature.attributes.name ||
-            "Unknown") as string;
+          const name = featureName(feature);
           const subtitle = getSubtitle(feature, dataset);
 
           return (
@@ -65,7 +52,7 @@ export function ResultsList({
               label={name}
               description={subtitle}
               selected={selectedIndex === i || undefined}
-              onCalciteListItemSelect={() => onSelect(i)}
+              oncalciteListItemSelect={() => onSelect(i)}
               aria-label={`${name}, ${subtitle}`}
             >
               <calcite-icon

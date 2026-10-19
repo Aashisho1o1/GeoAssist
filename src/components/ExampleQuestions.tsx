@@ -18,7 +18,7 @@ export function ExampleQuestions({ dataset, onSelect }: ExampleQuestionsProps) {
         Try asking:
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        {dataset.exampleQuestions.map((question, i) => (
+        {dataset.examples.map(({ question }, i) => (
           <calcite-button
             key={i}
             appearance="outline"
