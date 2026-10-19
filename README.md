@@ -2,13 +2,20 @@
 
 GeoAssist is a React + TypeScript web app that lets people ask plain-English questions against public ArcGIS Feature Services and instantly see results on an interactive map.
 
+**[Try the live demo →](https://aashisho1o1.github.io/GeoAssist/)**
+
+[![GeoAssist: choose a dataset, then ask the map a question](assets/demo.png)](https://aashisho1o1.github.io/GeoAssist/)
+
+No API key needed for the example questions: they run pre-translated queries against the live ArcGIS services. Add a Claude API key to ask your own questions.
+
 ## Why This Project
 
 Public GIS datasets are powerful but hard to query without ArcGIS REST syntax. GeoAssist translates natural language into ArcGIS query parameters so non-GIS users can explore hospitals, schools, and cities with no query-language training.
 
 ## Core Features
 
-- Natural language to ArcGIS REST query translation using Claude
+- Natural language to ArcGIS REST query translation using Claude (structured JSON output)
+- Generated SQL is checked against each dataset's real field names before it runs
 - Interactive ArcGIS map with result graphics and popup details
 - Dataset selector for US hospitals, public schools, and major cities
 - Chat-style query history and AI summary responses
@@ -19,10 +26,10 @@ Public GIS datasets are powerful but hard to query without ArcGIS REST syntax. G
 ## Architecture Flow
 
 1. User selects a dataset and submits a question.
-2. `useLLMTranslation` sends prompt + dataset schema context to Claude.
-3. Claude response is normalized into safe ArcGIS query params.
-4. `useArcGISQuery` calls `{featureServiceUrl}/query`.
-5. `MapPanel` + `useMapGraphics` render results and handle highlighting.
+2. `lib/translate.ts` sends the question, field list, and value notes to Claude, which returns query params as schema-checked JSON. Example questions skip this step and use their pre-translated query.
+3. `lib/validateQuery.ts` rejects unknown fields and unsafe SQL.
+4. `lib/arcgis.ts` calls `{featureServiceUrl}/query`.
+5. `MapPanel` + `lib/mapGraphics.ts` render results and handle highlighting.
 6. Sidebar shows chat summary, query inspector, and result list.
 
 ## Tech Stack
@@ -40,7 +47,7 @@ Public GIS datasets are powerful but hard to query without ArcGIS REST syntax. G
 
 - Node.js 20+
 - npm
-- Claude API key
+- Claude API key (optional; only needed for your own questions)
 
 ### Install
 
@@ -72,7 +79,13 @@ npm run lint
 - Paste your Claude key (`sk-ant-...`) and save.
 - The key is stored in browser `localStorage` under `geoassist_api_key`.
 
-## Deployment Notes
+## Deployment (GitHub Pages)
+
+1. In the repository, open **Settings** → **Pages**.
+2. Under **Build and deployment** → **Source**, select **GitHub Actions**.
+3. Push to `main`. The `Deploy to GitHub Pages` workflow builds the app and publishes `dist/` to **`https://aashisho1o1.github.io/GeoAssist/`**.
+
+Notes:
 
 - `vite.config.ts` uses `base: "/GeoAssist/"` for GitHub Pages project-site deployment.
 - Static assets for Calcite and ArcGIS are copied into `public/assets` by:

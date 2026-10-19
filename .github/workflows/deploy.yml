@@ -28,10 +28,6 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Copy assets to dist
-        run: |
-          cp -r public/assets dist/assets 2>/dev/null || true
-
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

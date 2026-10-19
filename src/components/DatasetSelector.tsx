@@ -39,7 +39,6 @@ export function DatasetSelector({ onSelect }: DatasetSelectorProps) {
           <calcite-card
             key={ds.id}
             onClick={() => onSelect(ds)}
-            style={{ cursor: "pointer" }}
             role="button"
             tabIndex={0}
             aria-label={`Explore ${ds.name}: ${ds.description}`}

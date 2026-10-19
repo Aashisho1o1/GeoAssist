@@ -1,9 +1,9 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useEffect, useState } from "react";
 import "@arcgis/map-components/dist/components/arcgis-map";
 import "@arcgis/map-components/dist/components/arcgis-search";
 import "@arcgis/map-components/dist/components/arcgis-zoom";
 import type { Feature, Dataset } from "../types";
-import { useMapGraphics } from "../hooks/useMapGraphics";
+import { showResults, highlightResult, clearResults } from "../lib/mapGraphics";
 
 interface MapPanelProps {
   features: Feature[] | null;
@@ -12,63 +12,26 @@ interface MapPanelProps {
   darkMode: boolean;
 }
 
-export function MapPanel({
-  features,
-  dataset,
-  selectedIndex,
-  darkMode,
-}: MapPanelProps) {
-  const mapRef = useRef<HTMLArcgisMapElement>(null);
-  const viewRef = useRef<__esri.MapView | null>(null);
-  const mapObjRef = useRef<__esri.Map | null>(null);
-  const { displayResults, highlightResult, clearGraphics } = useMapGraphics();
-
-  const handleViewReady = useCallback((event: Event) => {
-    const el = event.target as HTMLArcgisMapElement;
-    if (el.view && el.map) {
-      viewRef.current = el.view as __esri.MapView;
-      mapObjRef.current = el.map as __esri.Map;
-    }
-  }, []);
+export function MapPanel({ features, dataset, selectedIndex, darkMode }: MapPanelProps) {
+  const [view, setView] = useState<__esri.MapView | null>(null);
 
   useEffect(() => {
-    const el = mapRef.current;
-    if (!el) return;
-
-    el.addEventListener("arcgisViewReadyChange", handleViewReady);
-    return () => {
-      el.removeEventListener("arcgisViewReadyChange", handleViewReady);
-    };
-  }, [handleViewReady]);
+    if (!view) return;
+    if (features?.length && dataset) showResults(view, features, dataset);
+    else clearResults(view);
+  }, [view, features, dataset]);
 
   useEffect(() => {
-    const view = viewRef.current;
-    const map = mapObjRef.current;
-    if (!view || !map) return;
-
-    if (features && features.length > 0 && dataset) {
-      displayResults(view, map, features, dataset);
-    } else {
-      clearGraphics(map);
-    }
-  }, [features, dataset, displayResults, clearGraphics]);
-
-  useEffect(() => {
-    const view = viewRef.current;
-    const map = mapObjRef.current;
-    if (!view || !map || !features || selectedIndex === null) return;
-
-    highlightResult(view, map, features, selectedIndex);
-  }, [selectedIndex, features, highlightResult]);
-
-  const basemap = darkMode ? "dark-gray-vector" : "streets-vector";
+    const feature = selectedIndex === null ? undefined : features?.[selectedIndex];
+    if (view && feature) highlightResult(view, feature);
+  }, [view, features, selectedIndex]);
 
   return (
     <arcgis-map
-      ref={mapRef}
-      basemap={basemap}
+      basemap={darkMode ? "dark-gray-vector" : "streets-vector"}
       center="-98.35,39.5"
       zoom={4}
+      onarcgisViewReadyChange={(e: Event) => setView((e.target as HTMLArcgisMapElement).view)}
       style={{ width: "100%", height: "100%" }}
       aria-label="Interactive map showing query results"
     >

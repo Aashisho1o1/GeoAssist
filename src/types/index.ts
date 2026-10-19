@@ -6,10 +6,15 @@ export interface Dataset {
   impact: string;
   url: string;
   fields: string[];
-  keyFields: string;
-  exampleQuestions: string[];
+  examples: Example[];
+  valueHints: string[];
   icon: string;
   color: string;
+}
+
+export interface Example {
+  question: string;
+  query: LLMQueryResult;
 }
 
 export interface LLMQueryResult {
@@ -39,11 +44,10 @@ export interface ChatMessage {
   text: string;
   count?: number;
   isError?: boolean;
-  query?: LLMQueryResult;
 }
 
 export interface ArcGISQueryResponse {
-  features: Feature[];
+  features?: Feature[];
   error?: {
     message: string;
     code: number;

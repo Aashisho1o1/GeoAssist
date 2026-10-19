@@ -34,8 +34,9 @@ import { ChatPanel } from "./components/ChatPanel";
 import { ResultsList } from "./components/ResultsList";
 import { QueryInspector } from "./components/QueryInspector";
 import { ExampleQuestions } from "./components/ExampleQuestions";
-import { useLLMTranslation } from "./hooks/useLLMTranslation";
-import { useArcGISQuery } from "./hooks/useArcGISQuery";
+import { translateQuestion } from "./lib/translate";
+import { queryFeatures } from "./lib/arcgis";
+import { validateQuery } from "./lib/validateQuery";
 
 const MapPanel = lazy(() =>
   import("./components/MapPanel").then((module) => ({ default: module.MapPanel }))
@@ -49,32 +50,17 @@ function App() {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [currentQuery, setCurrentQuery] = useState<LLMQueryResult | null>(null);
   const [queryText, setQueryText] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("geoassist_api_key") || "");
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
 
   const liveRegionRef = useRef<HTMLDivElement | null>(null);
-  const latestRequestIdRef = useRef(0);
-  const isSearchInFlightRef = useRef(false);
-
-  const { translate, loading: llmLoading } = useLLMTranslation(apiKey);
-  const { executeQuery, loading: queryLoading } = useArcGISQuery();
-
-  const loading = llmLoading || queryLoading || isProcessing;
+  // Set while a search is in flight; replaced or cleared to make that search stale.
+  const searchRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add("calcite-mode-dark");
-    } else {
-      document.documentElement.classList.remove("calcite-mode-dark");
-    }
+    document.documentElement.classList.toggle("calcite-mode-dark", darkMode);
   }, [darkMode]);
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      setDarkMode(true);
-    }
-  }, []);
 
   const announceToScreenReader = useCallback((message: string) => {
     if (liveRegionRef.current) {
@@ -82,37 +68,40 @@ function App() {
     }
   }, []);
 
-  const handleDatasetSelect = useCallback((dataset: Dataset) => {
+  const resetSession = useCallback((dataset: Dataset | null) => {
+    searchRef.current?.abort();
+    searchRef.current = null;
+    setLoading(false);
     setSelectedDataset(dataset);
     setFeatures(null);
     setCurrentQuery(null);
     setChatHistory([]);
     setSelectedIndex(null);
     setQueryText("");
-    announceToScreenReader(`Selected ${dataset.name} dataset. ${dataset.description}`);
-  }, [announceToScreenReader]);
-
-  const handleBackToDatasets = useCallback(() => {
-    setSelectedDataset(null);
-    setFeatures(null);
-    setCurrentQuery(null);
-    setChatHistory([]);
-    setSelectedIndex(null);
   }, []);
+
+  const handleDatasetSelect = useCallback((dataset: Dataset) => {
+    resetSession(dataset);
+    announceToScreenReader(`Selected ${dataset.name} dataset. ${dataset.description}`);
+  }, [resetSession, announceToScreenReader]);
+
+  const handleBackToDatasets = useCallback(() => resetSession(null), [resetSession]);
 
   const handleSearch = useCallback(
     async (searchText?: string) => {
       const question = searchText || queryText;
-      if (!question.trim() || !selectedDataset || loading || isSearchInFlightRef.current) return;
-      if (!apiKey) {
+      if (!question.trim() || !selectedDataset || searchRef.current) return;
+      // Without a key, only the pre-translated examples can run.
+      const example = apiKey ? undefined : selectedDataset.examples.find((e) => e.question === question);
+      if (!apiKey && !example) {
         setShowApiKeyDialog(true);
         return;
       }
 
-      isSearchInFlightRef.current = true;
-      const requestId = latestRequestIdRef.current + 1;
-      latestRequestIdRef.current = requestId;
-      setIsProcessing(true);
+      const search = new AbortController();
+      searchRef.current = search;
+      const isStale = () => searchRef.current !== search;
+      setLoading(true);
       setQueryText("");
       setSelectedIndex(null);
 
@@ -120,22 +109,25 @@ function App() {
       announceToScreenReader(`Searching: ${question}`);
 
       try {
-        const queryParams = await translate(question, selectedDataset);
-        if (requestId !== latestRequestIdRef.current) return;
+        const queryParams =
+          example?.query ?? (await translateQuestion(apiKey, question, selectedDataset, search.signal));
+        if (isStale()) return;
         setCurrentQuery(queryParams);
+        validateQuery(queryParams, selectedDataset.fields);
 
-        const results = await executeQuery(selectedDataset, queryParams);
-        if (requestId !== latestRequestIdRef.current) return;
+        const results = await queryFeatures(selectedDataset, queryParams, search.signal);
+        if (isStale()) return;
         setFeatures(results);
 
+        const summary = example ? `${queryParams.summary} (Pre-translated example.)` : queryParams.summary;
         const summaryText =
           results.length > 0
-            ? `${queryParams.summary} — Found ${results.length} result${results.length !== 1 ? "s" : ""}.`
-            : `${queryParams.summary} — No results found. Try broadening your search.`;
+            ? `${summary} — Found ${results.length} result${results.length !== 1 ? "s" : ""}.`
+            : `${summary} — No results found. Try broadening your search.`;
 
         setChatHistory((prev) => [
           ...prev,
-          { role: "assistant", text: summaryText, count: results.length, query: queryParams },
+          { role: "assistant", text: summaryText, count: results.length },
         ]);
 
         announceToScreenReader(
@@ -144,7 +136,7 @@ function App() {
             : "No results found. Try a different question."
         );
       } catch (err) {
-        if (requestId !== latestRequestIdRef.current) return;
+        if (isStale()) return;
         const message = err instanceof Error ? err.message : "An error occurred";
         setChatHistory((prev) => [
           ...prev,
@@ -152,18 +144,14 @@ function App() {
         ]);
         announceToScreenReader(`Error: ${message}`);
       } finally {
-        if (requestId === latestRequestIdRef.current) {
-          isSearchInFlightRef.current = false;
-          setIsProcessing(false);
+        if (!isStale()) {
+          searchRef.current = null;
+          setLoading(false);
         }
       }
     },
-    [queryText, selectedDataset, loading, apiKey, translate, executeQuery, announceToScreenReader]
+    [queryText, selectedDataset, apiKey, announceToScreenReader]
   );
-
-  const handleResultSelect = useCallback((index: number) => {
-    setSelectedIndex(index);
-  }, []);
 
   const handleApiKeySave = useCallback(() => {
     localStorage.setItem("geoassist_api_key", apiKey);
@@ -173,36 +161,20 @@ function App() {
   return (
     <>
       {/* Screen reader live region */}
-      <div
-        ref={liveRegionRef}
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        style={{
-          position: "absolute",
-          width: 1,
-          height: 1,
-          padding: 0,
-          margin: -1,
-          overflow: "hidden",
-          clip: "rect(0,0,0,0)",
-          whiteSpace: "nowrap",
-          borderWidth: 0,
-        }}
-      />
+      <div ref={liveRegionRef} className="sr-only" role="status" aria-live="polite" aria-atomic="true" />
 
       {/* API Key Dialog */}
       <calcite-dialog
         heading="Enter Claude API Key"
         open={showApiKeyDialog || undefined}
-        onCalciteDialogClose={() => setShowApiKeyDialog(false)}
+        oncalciteDialogClose={() => setShowApiKeyDialog(false)}
         modal
       >
         <div style={{ padding: "1rem" }}>
           <calcite-notice open icon="information" scale="s" kind="info">
             <div slot="message">
-              Your API key is stored locally in your browser and never sent to any
-              server except Anthropic&apos;s API directly.
+              The example questions work without a key. To ask your own, add a Claude
+              API key. It is stored in your browser and sent only to Anthropic&apos;s API.
             </div>
           </calcite-notice>
           <div style={{ marginTop: "1rem" }}>
@@ -212,7 +184,7 @@ function App() {
                 type="password"
                 placeholder="sk-ant-..."
                 value={apiKey}
-                onCalciteInputTextInput={(e: Event) => {
+                oncalciteInputTextInput={(e: Event) => {
                   const target = e.target as HTMLCalciteInputTextElement;
                   setApiKey(target.value);
                 }}
@@ -306,7 +278,7 @@ function App() {
                     features={features}
                     dataset={selectedDataset}
                     selectedIndex={selectedIndex}
-                    onSelect={handleResultSelect}
+                    onSelect={setSelectedIndex}
                   />
                 )}
 
@@ -324,7 +296,7 @@ function App() {
                     placeholder={`Ask about ${selectedDataset.label}...`}
                     value={queryText}
                     disabled={loading || undefined}
-                    onCalciteInputTextInput={(e: Event) => {
+                    oncalciteInputTextInput={(e: Event) => {
                       const target = e.target as HTMLCalciteInputTextElement;
                       setQueryText(target.value);
                     }}
