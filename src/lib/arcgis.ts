@@ -1,3 +1,4 @@
+import { arcgisRequest } from "geoassist-hazard-proximity/core";
 import type { Dataset, LLMQueryResult, QueryResult, ArcGISQueryResponse } from "../types";
 
 const ROWS_DEADLINE_MS = 10_000;
@@ -19,7 +20,9 @@ async function getJson(url: string, signal: AbortSignal, deadlineMs: number): Pr
     stop();
   }, deadlineMs);
   try {
-    const response = await fetch(url, { signal: request.signal });
+    // A long filter goes as a POST: ArcGIS Online refuses GET URLs past about 2,000 characters.
+    const req = arcgisRequest(url);
+    const response = await fetch(req.url, { ...req.init, signal: request.signal });
     if (!response.ok) throw new Error(`ArcGIS request failed (${response.status})`);
     // ArcGIS reports many errors with HTTP 200 and an error object in the body.
     const data: ArcGISQueryResponse = await response.json();

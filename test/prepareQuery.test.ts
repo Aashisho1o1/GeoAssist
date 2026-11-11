@@ -151,3 +151,15 @@ test("the model is shown complete value lists and named groups", () => {
   assert.match(text, /group LEVEL_I: TRAUMA IN \('I', 'LEVEL I'\)/);
   assert.match(text, /- NAME \(String\)$/m);
 });
+
+test("values with an apostrophe are shown to the model as SQL literals", () => {
+  const text = describeSchema([{ name: "CITY", type: "String", examples: ["O'FALLON", "AUSTIN"], all_values: true }]);
+  assert.match(text, /all values: 'O''FALLON', 'AUSTIN'/);
+});
+
+test("a filter that uses STATUS in a form the check can't read keeps its rows and says why", () => {
+  const r = prepare({ where: "STATUS LIKE 'C%'" });
+  assert.equal(r.query.where, "STATUS LIKE 'C%'");
+  assert.equal(r.openOnlyApplied, false);
+  assert.match(r.warnings.join(" "), /were not left out/);
+});

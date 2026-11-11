@@ -84,7 +84,13 @@ function App() {
   // Data-edit date of the selected layer, read from the service. Keyed by
   // dataset id so a slow reply for one dataset never labels another.
   // `date` is null when the service reports none; `failed` when it could not be read.
-  const [lastEdited, setLastEdited] = useState<{ id: string; date: string | null; failed?: boolean } | null>(null);
+  // The layer edit date per dataset. Kept by id, so a slow answer for a
+  // dataset the person already left fills in only that dataset's line.
+  const [editDates, setEditDates] = useState<Record<string, { date: string | null; failed?: boolean }>>({});
+  const recordEditDate = useCallback((id: string, value: { date: string | null; failed?: boolean }) => {
+    // A late failure never replaces a date that was already read.
+    setEditDates((prev) => (value.failed && prev[id] && !prev[id].failed ? prev : { ...prev, [id]: value }));
+  }, []);
 
   const liveRegionRef = useRef<HTMLDivElement | null>(null);
   // Set while a search is in flight; replaced or cleared to make that search stale.
@@ -98,9 +104,9 @@ function App() {
     if (!selectedDataset) return;
     const id = selectedDataset.id;
     getDataSource(selectedDataset.core)
-      .then((source) => setLastEdited({ id, date: source.layer_last_edited }))
-      .catch(() => setLastEdited({ id, date: null, failed: true }));
-  }, [selectedDataset]);
+      .then((source) => recordEditDate(id, { date: source.layer_last_edited }))
+      .catch(() => recordEditDate(id, { date: null, failed: true }));
+  }, [selectedDataset, recordEditDate]);
 
   const announceToScreenReader = useCallback((message: string) => {
     if (liveRegionRef.current) {
@@ -165,7 +171,7 @@ function App() {
         // Reading the schema also reads the layer's edit date, so fill it in
         // here in case the first attempt failed.
         getDataSource(selectedDataset.core)
-          .then((source) => setLastEdited({ id: selectedDataset.id, date: source.layer_last_edited }))
+          .then((source) => recordEditDate(selectedDataset.id, { date: source.layer_last_edited }))
           .catch(() => {});
 
         const generated =
@@ -210,7 +216,7 @@ function App() {
         }
       }
     },
-    [queryText, selectedDataset, apiKey, announceToScreenReader, openApiKeyDialog]
+    [queryText, selectedDataset, apiKey, announceToScreenReader, openApiKeyDialog, recordEditDate]
   );
 
   const handleApiKeySave = useCallback(() => {
@@ -374,11 +380,11 @@ function App() {
                     {selectedDataset.core.source.origin}
                   </a>
                   , hosted by {selectedDataset.core.source.hosted_by}.{" "}
-                  {lastEdited?.id !== selectedDataset.id
+                  {!editDates[selectedDataset.id]
                     ? "Reading the layer's edit date."
-                    : lastEdited.date
-                      ? `Data last edited ${lastEdited.date}.`
-                      : lastEdited.failed
+                    : editDates[selectedDataset.id].date
+                      ? `Data last edited ${editDates[selectedDataset.id].date}.`
+                      : editDates[selectedDataset.id].failed
                         ? "The layer's edit date could not be read."
                         : "The layer does not report an edit date."}{" "}
                   A public snapshot, not a live feed.

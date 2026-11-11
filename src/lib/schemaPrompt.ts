@@ -1,6 +1,8 @@
 import type { FieldInfo } from "geoassist-hazard-proximity/core";
 
-const quote = (values: string[]) => values.map((v) => `'${v}'`).join(", ");
+// Values printed as SQL literals (O'FALLON as 'O''FALLON'), so the model
+// sees text it can paste into a filter as is.
+const quote = (values: string[]) => values.map((v) => `'${v.replace(/'/g, "''")}'`).join(", ");
 
 /**
  * The live layer schema as text for the model: one line per field with its

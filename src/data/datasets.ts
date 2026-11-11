@@ -49,7 +49,7 @@ export const DATASETS: Dataset[] = [
         "NAME,CITY,STATE,LEVEL_,ENROLLMENT", "NAME ASC", "Elementary schools in Claremont, California."),
     ],
     notes: [
-      "TYPE and STATUS hold numeric codes ('1', '2', ...). STATUS '1' is an open school; the other codes are closed, inactive, or not yet open. Do not filter on them unless asked",
+      "TYPE and STATUS hold numeric codes ('1', '2', ...). For STATUS, '1', '3', '4', '5' and '8' are operational schools (open, new, newly added, moved to another agency, reopened); '2' is closed, '6' temporarily closed, '7' not yet open. To keep only operational schools use STATUS IN ('1','3','4','5','8'). Do not filter on them unless asked",
       "ENROLLMENT and FT_TEACHER use -999 for unknown",
     ],
     icon: "education",

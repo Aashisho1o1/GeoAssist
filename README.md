@@ -102,7 +102,7 @@ GeoAssist does not have its own validator. It imports the query core of [geoassi
 - Only values, comparison operators, and a short list of SQL words are allowed (`AND`, `OR`, `NOT`, `IN`, `LIKE`, `IS`, `NULL`, `BETWEEN`, `UPPER`, `LOWER`). `;`, `--`, `/*`, and subqueries are refused. Words inside quoted values are treated as values, so a hospital named "Select Specialty" can be searched.
 - For coded fields (for example `STATUS`, `HELIPAD`, `TRAUMA`, `LEVEL_`), a quoted value in `FIELD = '...'` must exist in the layer. In an `IN (...)` list, values that don't exist are allowed as long as one does, and the answer names the ones that matched nothing.
 - A query is only refused over a value when it can be shown to match nothing, which means every condition is joined by `AND`. With `OR` or `NOT` in the filter the rest may still match, so the query runs and the answer names the unknown value.
-- For hospitals, `STATUS = 'OPEN'` is added unless the filter itself asks for another status (`STATUS = 'CLOSED'`), and the answer says only hospitals marked open in the snapshot are included. Naming the field some other way (`STATUS IS NOT NULL`) does not switch this off.
+- For hospitals, `STATUS = 'OPEN'` is added unless the filter itself asks for another status (`STATUS = 'CLOSED'`), and the answer says only hospitals marked open in the snapshot are included. Naming the field some other way (`STATUS IS NOT NULL`) does not switch this off. If the filter uses `STATUS` in a form the check can't read (`STATUS LIKE 'C%'`), the rule is left off and the answer says so, because adding `STATUS = 'OPEN'` could turn that filter into an empty one.
 - ORDER BY may only add `ASC` or `DESC`.
 
 The model is given the same live schema: every field with its type, real example values, the complete value list for coded fields, and named value groups (for example every spelling of a Level I trauma center).
@@ -116,7 +116,7 @@ The model is given the same live schema: every field with its type, real example
 - The pre-translated example questions are checked by the same gate, but their wording and summaries are written by hand.
 - Each question is sent to Claude on its own. Follow-up questions that depend on the previous answer do not work.
 - The hospital layer is an old snapshot. See Data sources. "Open" means open in that snapshot.
-- The school layer includes about 3,600 schools that are closed, inactive, or not yet open, and nothing filters them out.
+- The school layer includes 1,971 schools that are closed (`STATUS = '2'`), temporarily closed (`'6'`) or not yet open (`'7'`), and nothing filters them out. Codes `1`, `3`, `4`, `5` and `8` are operational schools (new, newly added, moved to another agency, reopened), following the NCES Common Core of Data.
 - The shared core is a GitHub dependency pinned to a commit of geoassist-mcp. It is not published to npm.
 - The Claude key is used from the browser. That is a demo shortcut: a production app would keep the key on a server.
 - I tested the example questions in the browser and the gate with unit tests. The path that calls Claude with a live API key has not been re-tested since the prompt was rewritten.

@@ -10,11 +10,15 @@ const signal = new AbortController().signal;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
 // Replaces fetch with a fake ArcGIS service and records the URLs requested.
+let methods: string[] = [];
 function mockArcGIS(respond: (url: URL) => Response): URL[] {
   const calls: URL[] = [];
-  globalThis.fetch = (async (input: string | URL) => {
-    const url = new URL(String(input));
+  methods = [];
+  globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+    // A POST carries the same parameters in its body.
+    const url = new URL(init?.method === "POST" ? `${String(input)}?${String(init.body)}` : String(input));
     calls.push(url);
+    methods.push(init?.method ?? "GET");
     return respond(url);
   }) as typeof fetch;
   return calls;
@@ -29,6 +33,14 @@ test("reports the total from a count query, not the number of capped rows", asyn
   assert.equal(result.total, 798);
   const count = calls.find((u) => u.searchParams.get("returnCountOnly"))!;
   assert.equal(count.searchParams.get("where"), "STATE='TX'"); // same filter as the rows
+});
+
+test("a long filter is sent as a POST, for both the rows and the count", async () => {
+  const where = `NAME = '${"&".repeat(800)}'`;
+  const calls = mockArcGIS((url) => (url.searchParams.get("returnCountOnly") ? json({ count: 0 }) : json(rows(0))));
+  await queryFeatures(hospitals, { ...query, where }, signal);
+  assert.deepEqual(methods, ["POST", "POST"]);
+  for (const u of calls) assert.equal(u.searchParams.get("where"), where);
 });
 
 test("a failed count is unknown, not zero, and the rows still come back", async () => {
