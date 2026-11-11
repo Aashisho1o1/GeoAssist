@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { FieldInfo } from "geoassist-hazard-proximity/core";
 import type { Dataset, LLMQueryResult } from "../types";
 import { LLM_SYSTEM_PROMPT } from "../data/datasets";
+import { describeSchema } from "./schemaPrompt";
 
 const MODEL = "claude-haiku-5-5";
 const MIN_RESULT_RECORD_COUNT = 5;
@@ -26,6 +28,7 @@ export async function translateQuestion(
   apiKey: string,
   question: string,
   dataset: Dataset,
+  schema: FieldInfo[],
   signal: AbortSignal
 ): Promise<LLMQueryResult> {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
@@ -44,7 +47,7 @@ export async function translateQuestion(
         messages: [
           {
             role: "user",
-            content: `Dataset: ${dataset.name}\nFields: ${dataset.fields.join(", ")}\nValue notes:\n- ${dataset.valueHints.join("\n- ")}\n\nUser question: "${question}"`,
+            content: `Dataset: ${dataset.name}\nFields:\n${describeSchema(schema)}\nNotes:\n- ${dataset.notes.join("\n- ")}\n\nUser question: "${question}"`,
           },
         ],
       },

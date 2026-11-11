@@ -15,7 +15,8 @@ Public GIS datasets are powerful but hard to query without ArcGIS REST syntax. G
 ## Core Features
 
 - Natural language to ArcGIS REST query translation using Claude (structured JSON output)
-- Generated SQL is checked against each dataset's field list before it runs
+- Generated SQL is checked against the live layer before it runs: field names, SQL shape, and the values of coded fields
+- Closed hospitals are left out unless the question asks about them
 - Every answer says how many rows are shown and how many match in total ("Showing 50 of 798 matching results")
 - The data source, the account that hosts it, and the layer's last-edit date are shown under the results
 - Interactive ArcGIS map with result graphics and popup details
@@ -28,8 +29,8 @@ Public GIS datasets are powerful but hard to query without ArcGIS REST syntax. G
 ## Architecture Flow
 
 1. User selects a dataset and submits a question.
-2. `lib/translate.ts` sends the question, field list, and value notes to Claude, which returns query params as schema-checked JSON. Example questions skip this step and use their pre-translated query.
-3. `lib/validateQuery.ts` rejects unknown fields and unsafe SQL.
+2. The app reads the layer's schema (fields, types, real values) from the service. `lib/translate.ts` sends the question and that schema to Claude, which returns query params as schema-checked JSON. Example questions skip the Claude call and use their pre-translated query.
+3. `lib/prepareQuery.ts` runs the query through the shared gate, which rejects unknown fields, unsafe SQL, and values that are not in the layer.
 4. `lib/arcgis.ts` calls `{featureServiceUrl}/query` twice in parallel: once for the rows to show, once with `returnCountOnly=true` for the total.
 5. `MapPanel` + `lib/mapGraphics.ts` render results and handle highlighting.
 6. Sidebar shows chat summary, query inspector, and result list.
@@ -81,7 +82,7 @@ npm run lint
 npm test
 ```
 
-The tests cover the query validator, the row and count requests (with ArcGIS mocked, so they run offline), and the result summary. There are no UI tests yet.
+The tests cover how the app uses the shared gate, the text the model is shown, the row and count requests (with ArcGIS mocked, so they run offline), and the result summary. The gate itself is tested in geoassist-mcp. There are no UI tests yet.
 
 ## Data sources
 
@@ -95,22 +96,26 @@ Dates are as checked on November 10, 2026. The app reads each layer's last-edit 
 
 ## How a generated query is checked
 
-`lib/validateQuery.ts` runs before any request is sent:
+GeoAssist does not have its own validator. It imports the query core of [geoassist-mcp](https://github.com/Aashisho1o1/geoassist-mcp) (`geoassist-hazard-proximity/core`, installed from GitHub at a pinned commit), so both projects run the same checks and those checks are tested in one place. `lib/prepareQuery.ts` calls it before any request is sent:
 
-- Quoted values are set aside first, so a hospital named "Select Specialty" is treated as a value and not as SQL.
-- `;`, `--`, `/*` and the word `SELECT` are refused anywhere else in the WHERE clause.
-- Every remaining word must be a field in the dataset or one of a short list of SQL words (`AND`, `OR`, `NOT`, `IN`, `LIKE`, `IS`, `NULL`, `BETWEEN`, `ESCAPE`, `UPPER`, `LOWER`, `TRIM`, `CHAR_LENGTH`).
-- `outFields` and `orderByFields` may only name dataset fields, and ORDER BY may only add `ASC` or `DESC`.
+- Field names in `where`, `outFields` and `orderByFields` must exist in the schema read from the live layer. A typo comes back with the nearest real field.
+- Only values, comparison operators, and a short list of SQL words are allowed (`AND`, `OR`, `NOT`, `IN`, `LIKE`, `IS`, `NULL`, `BETWEEN`, `UPPER`, `LOWER`). `;`, `--`, `/*`, and subqueries are refused. Words inside quoted values are treated as values, so a hospital named "Select Specialty" can be searched.
+- For coded fields (for example `STATUS`, `HELIPAD`, `TRAUMA`, `LEVEL_`), a quoted value in `FIELD = '...'` must exist in the layer. In an `IN (...)` list, values that don't exist are allowed as long as one does, and the answer names the ones that matched nothing.
+- For hospitals, `STATUS = 'OPEN'` is added unless the filter mentions `STATUS`, and the answer says closed hospitals were left out.
+- ORDER BY may only add `ASC` or `DESC`.
+
+The model is given the same live schema: every field with its type, real example values, the complete value list for coded fields, and named value groups (for example every spelling of a Level I trauma center).
 
 ## Limits
 
 - Results are capped at 50 rows per question. The total shown comes from a separate count query. If that query fails, the app says the total is unknown.
 - Counting questions ("how many hospitals are in Texas?") get a list plus the total, not a computed answer. Sums, averages, and group-by questions are not supported yet.
-- The field lists and value hints in `data/datasets.ts` are written by hand, so they can drift from the live layers.
-- The validator checks field names and SQL shape, not values. A filter with a real field and a value that isn't in the layer returns no results without an explanation.
-- Closed hospitals are included unless the question excludes them.
+- Values are checked only for coded fields, and only in `=` and `IN` comparisons. A misspelled city in `CITY = '...'` or a `LIKE` pattern that matches nothing returns no results without an explanation.
+- The pre-translated example questions are checked by the same gate, but their wording and summaries are written by hand.
 - Each question is sent to Claude on its own. Follow-up questions that depend on the previous answer do not work.
-- The hospital layer is an old snapshot. See Data sources.
+- The hospital layer is an old snapshot. See Data sources. "Open" means open in that snapshot.
+- The shared core is a GitHub dependency pinned to a commit on geoassist-mcp's `main-fable` branch. It is not published to npm.
+- I tested the example questions in the browser and the gate with unit tests. The path that calls Claude with a live API key has not been re-tested since this change.
 
 ## API Key Setup
 

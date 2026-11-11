@@ -1,3 +1,4 @@
+import { DATASETS as CORE } from "geoassist-hazard-proximity/core";
 import type { Dataset, Example } from "../types";
 
 // Pre-translated example queries, so the demo works without an API key.
@@ -8,18 +9,11 @@ function example(question: string, where: string, outFields: string, orderByFiel
 export const DATASETS: Dataset[] = [
   {
     id: "hospitals",
+    core: CORE.hospitals,
     name: "US Hospitals",
     label: "Hospitals",
     description: "About 7,500 hospitals across the United States",
     impact: "Find healthcare near you or research medical access equity",
-    url: "https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/Hospitals_hifld/FeatureServer/0",
-    fields: [
-      "NAME", "ADDRESS", "CITY", "STATE", "ZIP", "TELEPHONE", "TYPE",
-      "STATUS", "POPULATION", "COUNTY", "COUNTYFIPS", "COUNTRY",
-      "LATITUDE", "LONGITUDE", "NAICS_CODE", "NAICS_DESC", "SOURCE",
-      "SOURCEDATE", "VAL_METHOD", "VAL_DATE", "WEBSITE", "STATE_ID",
-      "ALT_NAME", "ST_FIPS", "OWNER", "TTL_STAFF", "BEDS", "TRAUMA", "HELIPAD",
-    ],
     examples: [
       example("Show hospitals in California with more than 500 beds", "STATE='CA' AND BEDS>500",
         "NAME,CITY,STATE,BEDS,TRAUMA", "BEDS DESC", "California hospitals with more than 500 beds, largest first."),
@@ -30,38 +24,20 @@ export const DATASETS: Dataset[] = [
       example("Show me government-owned hospitals in New York", "STATE='NY' AND OWNER LIKE 'GOVERNMENT%'",
         "NAME,CITY,STATE,OWNER,BEDS", "BEDS DESC", "Federal, state and local government hospitals in New York."),
     ],
-    valueHints: [
-      "STATE is a 2-letter code: STATE='TX'",
-      "TRAUMA is free text. Any trauma center: TRAUMA NOT IN ('NOT AVAILABLE','NON-DESIGNATED','NOT DESIGNATED','UNCLASSIFIED'). Level I: (TRAUMA IN ('I','1','LEVEL I','LEVEL 1') OR TRAUMA LIKE 'LEVEL I,%' OR TRAUMA LIKE 'LEVEL I %' OR TRAUMA LIKE 'I,%')",
-      "HELIPAD: 'Y' or 'N'",
-      "OWNER: 'GOVERNMENT - FEDERAL', 'GOVERNMENT - STATE', 'GOVERNMENT - LOCAL', 'GOVERNMENT - DISTRICT/AUTHORITY', 'NON-PROFIT', 'PROPRIETARY'",
-      "TYPE: 'GENERAL ACUTE CARE', 'CRITICAL ACCESS', 'CHILDREN', 'PSYCHIATRIC', 'MILITARY', 'LONG TERM CARE', 'REHABILITATION', 'WOMEN', 'SPECIAL', 'CHRONIC DISEASE'",
-      "STATUS: 'OPEN' or 'CLOSED'",
+    notes: [
+      "Any trauma center: TRAUMA NOT IN ('NOT AVAILABLE','NON-DESIGNATED','NOT DESIGNATED','UNCLASSIFIED')",
       "BEDS = -999 means unknown",
     ],
     icon: "map-pin",
     color: "#e74c3c",
-    source: {
-      origin: "HIFLD Hospitals",
-      hostedBy: "FEMA Region 6 GIS",
-      itemUrl: "https://www.arcgis.com/home/item.html?id=38eebc0197034d59b331eaa7f753cdb0",
-      livingAtlas: false,
-    },
   },
   {
     id: "schools",
+    core: CORE.schools,
     name: "US Public Schools",
     label: "Schools",
     description: "100,000+ public schools across the United States",
     impact: "Research schools for your family or study education equity",
-    url: "https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/Public_Schools/FeatureServer/3",
-    fields: [
-      "NAME", "ADDRESS", "CITY", "STATE", "ZIP", "TELEPHONE", "TYPE",
-      "STATUS", "POPULATION", "COUNTY", "COUNTYFIPS", "COUNTRY",
-      "LATITUDE", "LONGITUDE", "NAICS_CODE", "NAICS_DESC", "SOURCE",
-      "SOURCE_DAT", "VAL_METHOD", "VAL_DATE", "WEBSITE", "LEVEL_",
-      "ENROLLMENT", "ST_GRADE", "END_GRADE", "FT_TEACHER", "SHELTER_ID",
-    ],
     examples: [
       example("Show high schools in Los Angeles County", "STATE='CA' AND COUNTY='LOS ANGELES' AND LEVEL_='HIGH'",
         "NAME,CITY,STATE,LEVEL_,ENROLLMENT", "ENROLLMENT DESC", "High schools in Los Angeles County, largest first."),
@@ -72,33 +48,20 @@ export const DATASETS: Dataset[] = [
       example("Show me elementary schools in Claremont, California", "STATE='CA' AND CITY='CLAREMONT' AND LEVEL_='ELEMENTARY'",
         "NAME,CITY,STATE,LEVEL_,ENROLLMENT", "NAME ASC", "Elementary schools in Claremont, California."),
     ],
-    valueHints: [
-      "STATE is a 2-letter code: STATE='OH'",
-      "COUNTY and CITY are uppercase: COUNTY='LOS ANGELES', CITY='MIAMI'",
-      "LEVEL_: 'ELEMENTARY', 'MIDDLE', 'HIGH', 'SECONDARY', 'PREKINDERGARTEN', 'ADULT EDUCATION', 'UNGRADED', 'OTHER', 'NOT APPLICABLE', 'NOT REPORTED'",
+    notes: [
       "TYPE and STATUS hold undocumented codes ('1', '2', ...); do not filter on them",
       "ENROLLMENT and FT_TEACHER use -999 for unknown",
     ],
     icon: "education",
     color: "#3498db",
-    source: {
-      origin: "HIFLD Public Schools (from NCES Common Core of Data)",
-      hostedBy: "FEMA",
-      itemUrl: "https://www.arcgis.com/home/item.html?id=963a2d204098495a8a80134ed9dc95ae",
-      livingAtlas: false,
-    },
   },
   {
     id: "cities",
+    core: CORE.cities,
     name: "US Major Cities",
     label: "Cities",
     description: "Major cities and populations across the US",
     impact: "Explore urbanization patterns and city demographics",
-    url: "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/USA_Major_Cities_/FeatureServer/0",
-    fields: [
-      "OBJECTID", "NAME", "CLASS", "STATE_ABBR", "STATE_FIPS", "PLACE_FIPS",
-      "POPULATION", "POP_CLASS", "POP_SQMI", "SQMI", "CAPITAL"
-    ],
     examples: [
       example("Show cities in California with population over 500000", "STATE_ABBR='CA' AND POPULATION>500000",
         "NAME,STATE_ABBR,POPULATION", "POPULATION DESC", "California cities with more than 500,000 people."),
@@ -109,26 +72,18 @@ export const DATASETS: Dataset[] = [
       example("Find large cities in Florida", "STATE_ABBR='FL' AND POPULATION>200000",
         "NAME,STATE_ABBR,POPULATION", "POPULATION DESC", "Florida cities with more than 200,000 people."),
     ],
-    valueHints: [
-      "STATE_ABBR is a 2-letter code: STATE_ABBR='CA'",
-      "CAPITAL: 'State' for state capitals, 'National' for Washington DC, '' otherwise",
-      "CLASS: 'city', 'town', 'village', 'borough', 'municipality', 'Census Designated Place'",
+    notes: [
+      "CAPITAL: 'State' for state capitals, 'National' for Washington DC, blank otherwise",
       "POP_CLASS is a numeric size bucket; prefer POPULATION for size filters",
     ],
     icon: "urban-model",
     color: "#2ecc71",
-    source: {
-      origin: "USA Major Cities (Esri, US Census Bureau)",
-      hostedBy: "Esri, ArcGIS Living Atlas",
-      itemUrl: "https://www.arcgis.com/home/item.html?id=9df5e769bfe8412b8de36a2e618c7672",
-      livingAtlas: true,
-    },
   },
 ];
 
 export const LLM_SYSTEM_PROMPT = `You are a GIS query translator. Convert a natural language question into ArcGIS REST API query parameters.
 
-You will receive the dataset name, its fields, notes on the values those fields hold, and the user's question.
+You will receive the dataset name, its fields as read from the live layer (with types and real values), notes, and the user's question.
 
 Fill these fields:
 - where: SQL WHERE clause for ArcGIS (e.g., STATE='CA' AND BEDS>500). Use 1=1 when there is no filter.
@@ -139,8 +94,10 @@ Fill these fields:
 
 RULES:
 - Use only the listed field names, in WHERE, outFields and orderByFields alike
-- Follow the value notes exactly; values are case-sensitive
+- Where a field says "all values", compare it only with values from that list. A value that is not in the list will be refused.
+- Where a field has a named group of values, use FIELD IN (...) with every value of the group
 - String comparisons use single quotes: STATE='CA'
 - Use LIKE with % for partial matches: NAME LIKE '%MEMORIAL%'
-- Plain SQL only: no semicolons, comments or subqueries
+- Plain SQL only: AND, OR, NOT, IN, LIKE, IS NULL, BETWEEN, UPPER(), LOWER(). No semicolons, comments or subqueries
+- Closed hospitals are left out automatically. Mention STATUS in the filter only when the user asks about closed or all hospitals
 - Always include NAME and the location fields (CITY, STATE or STATE_ABBR) in outFields`;

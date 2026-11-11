@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { queryFeatures, getLastEdited } from "../src/lib/arcgis.ts";
+import { queryFeatures } from "../src/lib/arcgis.ts";
 import { resultSummary } from "../src/lib/format.ts";
 import { DATASETS } from "../src/data/datasets.ts";
 
@@ -41,13 +41,6 @@ test("a failed count is unknown, not zero, and the rows still come back", async 
 test("an ArcGIS error sent with HTTP 200 is still an error", async () => {
   mockArcGIS(() => json({ error: { code: 400, message: "Invalid query" } }));
   await assert.rejects(queryFeatures(hospitals, query, signal), /Invalid query/);
-});
-
-test("reads the layer's last-edit date from the service", async () => {
-  mockArcGIS(() => json({ editingInfo: { dataLastEditDate: Date.UTC(2021, 7, 30) } }));
-  assert.equal(await getLastEdited(hospitals, signal), "2021-08-30");
-  mockArcGIS(() => json({}));
-  assert.equal(await getLastEdited(hospitals, signal), null);
 });
 
 test("the summary never presents capped rows as the total", () => {

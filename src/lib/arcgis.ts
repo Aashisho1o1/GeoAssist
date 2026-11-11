@@ -33,25 +33,13 @@ export async function queryFeatures(
   const countParams = new URLSearchParams({ where: query.where, returnCountOnly: "true", f: "json" });
 
   const [rows, total] = await Promise.all([
-    getJson(`${dataset.url}/query?${params}`, signal),
+    getJson(`${dataset.core.url}/query?${params}`, signal),
     // A failed count must not hide the rows. It is reported as unknown (null),
     // never as 0. An aborted search still rejects through the rows request.
-    getJson(`${dataset.url}/query?${countParams}`, signal)
+    getJson(`${dataset.core.url}/query?${countParams}`, signal)
       .then((data) => (typeof data.count === "number" ? data.count : null))
       .catch(() => null),
   ]);
 
   return { features: rows.features ?? [], total };
-}
-
-/**
- * The date the layer's data was last edited (YYYY-MM-DD), read from the
- * service itself, or null when the service doesn't report one.
- */
-export async function getLastEdited(dataset: Dataset, signal: AbortSignal): Promise<string | null> {
-  const response = await fetch(`${dataset.url}?f=json`, { signal });
-  if (!response.ok) return null;
-  const layer = await response.json();
-  const edited = layer?.editingInfo?.dataLastEditDate ?? layer?.editingInfo?.lastEditDate;
-  return typeof edited === "number" ? new Date(edited).toISOString().slice(0, 10) : null;
 }

@@ -35,9 +35,10 @@ import { ResultsList } from "./components/ResultsList";
 import { QueryInspector } from "./components/QueryInspector";
 import { ExampleQuestions } from "./components/ExampleQuestions";
 import { translateQuestion } from "./lib/translate";
-import { queryFeatures, getLastEdited } from "./lib/arcgis";
+import { getSchema, getDataSource } from "geoassist-hazard-proximity/core";
+import { queryFeatures } from "./lib/arcgis";
 import { resultSummary } from "./lib/format";
-import { validateQuery } from "./lib/validateQuery";
+import { prepareQuery } from "./lib/prepareQuery";
 
 const MapPanel = lazy(() =>
   import("./components/MapPanel").then((module) => ({ default: module.MapPanel }))
@@ -68,11 +69,9 @@ function App() {
 
   useEffect(() => {
     if (!selectedDataset) return;
-    const request = new AbortController();
-    getLastEdited(selectedDataset, request.signal)
-      .then((date) => setLastEdited({ id: selectedDataset.id, date }))
+    getDataSource(selectedDataset.core)
+      .then((source) => setLastEdited({ id: selectedDataset.id, date: source.layer_last_edited }))
       .catch(() => {});
-    return () => request.abort();
   }, [selectedDataset]);
 
   const announceToScreenReader = useCallback((message: string) => {
@@ -126,11 +125,19 @@ function App() {
       announceToScreenReader(`Searching: ${question}`);
 
       try {
-        const queryParams =
-          example?.query ?? (await translateQuestion(apiKey, question, selectedDataset, search.signal));
+        // Fields, types and real values, read from the live layer (cached for an hour).
+        const schema = await getSchema(selectedDataset.core);
         if (isStale()) return;
+
+        const generated =
+          example?.query ?? (await translateQuestion(apiKey, question, selectedDataset, schema, search.signal));
+        if (isStale()) return;
+        // Show what was generated even if the check below refuses it.
+        setCurrentQuery(generated);
+
+        // The same gate geoassist-mcp uses. Throws before anything reaches ArcGIS.
+        const { query: queryParams, openOnlyApplied, warnings } = prepareQuery(selectedDataset, schema, generated);
         setCurrentQuery(queryParams);
-        validateQuery(queryParams, selectedDataset.fields);
 
         const { features: results, total } = await queryFeatures(selectedDataset, queryParams, search.signal);
         if (isStale()) return;
@@ -138,10 +145,14 @@ function App() {
 
         const summary = example ? `${queryParams.summary} (Pre-translated example.)` : queryParams.summary;
         const counts = resultSummary(results.length, total);
+        const notes = [
+          ...(openOnlyApplied ? ["Closed hospitals are left out."] : []),
+          ...warnings,
+        ];
 
         setChatHistory((prev) => [
           ...prev,
-          { role: "assistant", text: `${summary} ${counts}`, count: results.length },
+          { role: "assistant", text: [summary, counts, ...notes].join(" "), count: results.length },
         ]);
 
         announceToScreenReader(`${counts} ${queryParams.summary}`);
@@ -295,10 +306,10 @@ function App() {
                 {/* Where the data comes from and how old it is */}
                 <p className="data-source">
                   Source:{" "}
-                  <a href={selectedDataset.source.itemUrl} target="_blank" rel="noopener noreferrer">
-                    {selectedDataset.source.origin}
+                  <a href={selectedDataset.core.source.item_url} target="_blank" rel="noopener noreferrer">
+                    {selectedDataset.core.source.origin}
                   </a>
-                  , hosted by {selectedDataset.source.hostedBy}.{" "}
+                  , hosted by {selectedDataset.core.source.hosted_by}.{" "}
                   {lastEdited?.id === selectedDataset.id && lastEdited.date
                     ? `Layer last edited ${lastEdited.date}.`
                     : "Layer edit date not available."}{" "}
