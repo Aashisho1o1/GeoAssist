@@ -10,6 +10,22 @@ export interface Dataset {
   valueHints: string[];
   icon: string;
   color: string;
+  source: DataSource;
+}
+
+/** Where a dataset comes from and who hosts the copy this app queries. */
+export interface DataSource {
+  origin: string;
+  hostedBy: string;
+  itemUrl: string;
+  livingAtlas: boolean;
+}
+
+/** What one search returned: the rows shown, and how many rows match in total. */
+export interface QueryResult {
+  features: Feature[];
+  /** Count of every matching row, or null when the count request failed. */
+  total: number | null;
 }
 
 export interface Example {
@@ -48,6 +64,7 @@ export interface ChatMessage {
 
 export interface ArcGISQueryResponse {
   features?: Feature[];
+  count?: number;
   error?: {
     message: string;
     code: number;

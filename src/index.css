@@ -35,6 +35,19 @@ calcite-panel {
   min-height: 0;
 }
 
+.data-source {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--calcite-color-border-3);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--calcite-color-text-3);
+}
+
+.data-source a {
+  color: var(--calcite-color-text-link);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

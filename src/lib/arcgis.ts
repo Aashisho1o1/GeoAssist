@@ -1,10 +1,25 @@
-import type { Dataset, LLMQueryResult, Feature, ArcGISQueryResponse } from "../types";
+import type { Dataset, LLMQueryResult, QueryResult, ArcGISQueryResponse } from "../types";
 
+async function getJson(url: string, signal: AbortSignal): Promise<ArcGISQueryResponse> {
+  const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`ArcGIS request failed (${response.status})`);
+  // ArcGIS reports many errors with HTTP 200 and an error object in the body.
+  const data: ArcGISQueryResponse = await response.json();
+  if (data.error) throw new Error(`ArcGIS error: ${data.error.message}`);
+  return data;
+}
+
+/**
+ * Runs the query twice in parallel: once for the rows to show (capped at
+ * resultRecordCount) and once with returnCountOnly for the number of rows
+ * that match in total. The cap means the rows alone can't say how many
+ * matches exist, so the count is what the UI reports.
+ */
 export async function queryFeatures(
   dataset: Dataset,
   query: LLMQueryResult,
   signal: AbortSignal
-): Promise<Feature[]> {
+): Promise<QueryResult> {
   const params = new URLSearchParams({
     where: query.where,
     outFields: query.outFields,
@@ -15,11 +30,28 @@ export async function queryFeatures(
   });
   if (query.orderByFields) params.append("orderByFields", query.orderByFields);
 
-  const response = await fetch(`${dataset.url}/query?${params}`, { signal });
-  if (!response.ok) throw new Error(`ArcGIS request failed (${response.status})`);
+  const countParams = new URLSearchParams({ where: query.where, returnCountOnly: "true", f: "json" });
 
-  const data: ArcGISQueryResponse = await response.json();
-  if (data.error) throw new Error(`ArcGIS error: ${data.error.message}`);
+  const [rows, total] = await Promise.all([
+    getJson(`${dataset.url}/query?${params}`, signal),
+    // A failed count must not hide the rows. It is reported as unknown (null),
+    // never as 0. An aborted search still rejects through the rows request.
+    getJson(`${dataset.url}/query?${countParams}`, signal)
+      .then((data) => (typeof data.count === "number" ? data.count : null))
+      .catch(() => null),
+  ]);
 
-  return data.features ?? [];
+  return { features: rows.features ?? [], total };
+}
+
+/**
+ * The date the layer's data was last edited (YYYY-MM-DD), read from the
+ * service itself, or null when the service doesn't report one.
+ */
+export async function getLastEdited(dataset: Dataset, signal: AbortSignal): Promise<string | null> {
+  const response = await fetch(`${dataset.url}?f=json`, { signal });
+  if (!response.ok) return null;
+  const layer = await response.json();
+  const edited = layer?.editingInfo?.dataLastEditDate ?? layer?.editingInfo?.lastEditDate;
+  return typeof edited === "number" ? new Date(edited).toISOString().slice(0, 10) : null;
 }

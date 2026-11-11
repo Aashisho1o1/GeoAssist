@@ -40,7 +40,7 @@ export function ResultsList({
     >
       <calcite-list
         selection-mode="single"
-        aria-label={`${features.length} results found`}
+        aria-label={`${features.length} results shown`}
       >
         {features.map((feature, i) => {
           const name = featureName(feature);

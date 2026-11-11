@@ -10,7 +10,7 @@ export const DATASETS: Dataset[] = [
     id: "hospitals",
     name: "US Hospitals",
     label: "Hospitals",
-    description: "7,500+ hospitals across the United States",
+    description: "About 7,500 hospitals across the United States",
     impact: "Find healthcare near you or research medical access equity",
     url: "https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/Hospitals_hifld/FeatureServer/0",
     fields: [
@@ -41,6 +41,12 @@ export const DATASETS: Dataset[] = [
     ],
     icon: "map-pin",
     color: "#e74c3c",
+    source: {
+      origin: "HIFLD Hospitals",
+      hostedBy: "FEMA Region 6 GIS",
+      itemUrl: "https://www.arcgis.com/home/item.html?id=38eebc0197034d59b331eaa7f753cdb0",
+      livingAtlas: false,
+    },
   },
   {
     id: "schools",
@@ -48,12 +54,12 @@ export const DATASETS: Dataset[] = [
     label: "Schools",
     description: "100,000+ public schools across the United States",
     impact: "Research schools for your family or study education equity",
-    url: "https://services1.arcgis.com/cRvLdSPAsRupRo7I/arcgis/rest/services/Public_Schools_/FeatureServer/0",
+    url: "https://services.arcgis.com/XG15cJAlne2vxtgt/arcgis/rest/services/Public_Schools/FeatureServer/3",
     fields: [
       "NAME", "ADDRESS", "CITY", "STATE", "ZIP", "TELEPHONE", "TYPE",
       "STATUS", "POPULATION", "COUNTY", "COUNTYFIPS", "COUNTRY",
       "LATITUDE", "LONGITUDE", "NAICS_CODE", "NAICS_DESC", "SOURCE",
-      "SOURCEDATE", "VAL_METHOD", "VAL_DATE", "WEBSITE", "LEVEL_",
+      "SOURCE_DAT", "VAL_METHOD", "VAL_DATE", "WEBSITE", "LEVEL_",
       "ENROLLMENT", "ST_GRADE", "END_GRADE", "FT_TEACHER", "SHELTER_ID",
     ],
     examples: [
@@ -69,12 +75,18 @@ export const DATASETS: Dataset[] = [
     valueHints: [
       "STATE is a 2-letter code: STATE='OH'",
       "COUNTY and CITY are uppercase: COUNTY='LOS ANGELES', CITY='MIAMI'",
-      "LEVEL_: 'ELEMENTARY', 'MIDDLE', 'HIGH', 'SECONDARY', 'PREKINDERGARTEN', 'ADULT EDUCATION', 'UNGRADED', 'OTHER'",
-      "TYPE and STATUS are numeric codes; do not filter on them",
+      "LEVEL_: 'ELEMENTARY', 'MIDDLE', 'HIGH', 'SECONDARY', 'PREKINDERGARTEN', 'ADULT EDUCATION', 'UNGRADED', 'OTHER', 'NOT APPLICABLE', 'NOT REPORTED'",
+      "TYPE and STATUS hold undocumented codes ('1', '2', ...); do not filter on them",
       "ENROLLMENT and FT_TEACHER use -999 for unknown",
     ],
     icon: "education",
     color: "#3498db",
+    source: {
+      origin: "HIFLD Public Schools (from NCES Common Core of Data)",
+      hostedBy: "FEMA",
+      itemUrl: "https://www.arcgis.com/home/item.html?id=963a2d204098495a8a80134ed9dc95ae",
+      livingAtlas: false,
+    },
   },
   {
     id: "cities",
@@ -105,6 +117,12 @@ export const DATASETS: Dataset[] = [
     ],
     icon: "urban-model",
     color: "#2ecc71",
+    source: {
+      origin: "USA Major Cities (Esri, US Census Bureau)",
+      hostedBy: "Esri, ArcGIS Living Atlas",
+      itemUrl: "https://www.arcgis.com/home/item.html?id=9df5e769bfe8412b8de36a2e618c7672",
+      livingAtlas: true,
+    },
   },
 ];
 

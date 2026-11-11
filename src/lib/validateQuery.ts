@@ -7,9 +7,15 @@ const SQL_WORDS = new Set([
 ]);
 const FORBIDDEN = /;|--|\/\*|\bSELECT\b/i;
 
+// The clause with every quoted string literal emptied, so checks look at the
+// SQL itself and not at values. NAME LIKE '%SELECT SPECIALTY%' is a value.
+function withoutLiterals(sql: string): string {
+  return sql.replace(/'(?:[^']|'')*'/g, "''");
+}
+
 // Bare words in a clause, ignoring the contents of quoted string literals.
 function identifiers(sql: string): string[] {
-  return sql.replace(/'(?:[^']|'')*'/g, "''").match(/[A-Za-z_]\w*/g) ?? [];
+  return withoutLiterals(sql).match(/[A-Za-z_]\w*/g) ?? [];
 }
 
 /** Throws if the LLM-generated query uses unknown fields or unsafe SQL. */
@@ -20,7 +26,7 @@ export function validateQuery(query: LLMQueryResult, fields: string[]): void {
     if (!allowed.has(name.toUpperCase())) unknown.add(name);
   };
 
-  if (FORBIDDEN.test(query.where)) {
+  if (FORBIDDEN.test(withoutLiterals(query.where))) {
     throw new Error("Rejected generated query: WHERE clause contains disallowed SQL.");
   }
   identifiers(query.where)

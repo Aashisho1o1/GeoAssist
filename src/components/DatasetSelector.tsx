@@ -77,7 +77,8 @@ export function DatasetSelector({ onSelect }: DatasetSelectorProps) {
       >
         Built with React + TypeScript | ArcGIS REST API | Claude AI
         <br />
-        All data is free and publicly available from ArcGIS Living Atlas
+        Data: public layers on ArcGIS Online (HIFLD hospitals and schools hosted by FEMA,
+        USA Major Cities from ArcGIS Living Atlas)
       </div>
     </div>
   );

@@ -35,7 +35,8 @@ import { ResultsList } from "./components/ResultsList";
 import { QueryInspector } from "./components/QueryInspector";
 import { ExampleQuestions } from "./components/ExampleQuestions";
 import { translateQuestion } from "./lib/translate";
-import { queryFeatures } from "./lib/arcgis";
+import { queryFeatures, getLastEdited } from "./lib/arcgis";
+import { resultSummary } from "./lib/format";
 import { validateQuery } from "./lib/validateQuery";
 
 const MapPanel = lazy(() =>
@@ -53,6 +54,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [apiKey, setApiKey] = useState(() => localStorage.getItem("geoassist_api_key") || "");
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
+  // Last-edit date of the selected layer, read from the service. Keyed by
+  // dataset id so a slow reply for one dataset never labels another.
+  const [lastEdited, setLastEdited] = useState<{ id: string; date: string | null } | null>(null);
 
   const liveRegionRef = useRef<HTMLDivElement | null>(null);
   // Set while a search is in flight; replaced or cleared to make that search stale.
@@ -61,6 +65,15 @@ function App() {
   useEffect(() => {
     document.documentElement.classList.toggle("calcite-mode-dark", darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    if (!selectedDataset) return;
+    const request = new AbortController();
+    getLastEdited(selectedDataset, request.signal)
+      .then((date) => setLastEdited({ id: selectedDataset.id, date }))
+      .catch(() => {});
+    return () => request.abort();
+  }, [selectedDataset]);
 
   const announceToScreenReader = useCallback((message: string) => {
     if (liveRegionRef.current) {
@@ -104,6 +117,10 @@ function App() {
       setLoading(true);
       setQueryText("");
       setSelectedIndex(null);
+      // Clear the last answer now, so a failed or rejected search never
+      // leaves the previous question's results on the map and in the list.
+      setFeatures(null);
+      setCurrentQuery(null);
 
       setChatHistory((prev) => [...prev, { role: "user", text: question }]);
       announceToScreenReader(`Searching: ${question}`);
@@ -115,26 +132,19 @@ function App() {
         setCurrentQuery(queryParams);
         validateQuery(queryParams, selectedDataset.fields);
 
-        const results = await queryFeatures(selectedDataset, queryParams, search.signal);
+        const { features: results, total } = await queryFeatures(selectedDataset, queryParams, search.signal);
         if (isStale()) return;
         setFeatures(results);
 
         const summary = example ? `${queryParams.summary} (Pre-translated example.)` : queryParams.summary;
-        const summaryText =
-          results.length > 0
-            ? `${summary} — Found ${results.length} result${results.length !== 1 ? "s" : ""}.`
-            : `${summary} — No results found. Try broadening your search.`;
+        const counts = resultSummary(results.length, total);
 
         setChatHistory((prev) => [
           ...prev,
-          { role: "assistant", text: summaryText, count: results.length },
+          { role: "assistant", text: `${summary} ${counts}`, count: results.length },
         ]);
 
-        announceToScreenReader(
-          results.length > 0
-            ? `Found ${results.length} results. ${queryParams.summary}`
-            : "No results found. Try a different question."
-        );
+        announceToScreenReader(`${counts} ${queryParams.summary}`);
       } catch (err) {
         if (isStale()) return;
         const message = err instanceof Error ? err.message : "An error occurred";
@@ -281,6 +291,19 @@ function App() {
                     onSelect={setSelectedIndex}
                   />
                 )}
+
+                {/* Where the data comes from and how old it is */}
+                <p className="data-source">
+                  Source:{" "}
+                  <a href={selectedDataset.source.itemUrl} target="_blank" rel="noopener noreferrer">
+                    {selectedDataset.source.origin}
+                  </a>
+                  , hosted by {selectedDataset.source.hostedBy}.{" "}
+                  {lastEdited?.id === selectedDataset.id && lastEdited.date
+                    ? `Layer last edited ${lastEdited.date}.`
+                    : "Layer edit date not available."}{" "}
+                  A public snapshot, not a live feed.
+                </p>
 
                 {/* Input area */}
                 <div
