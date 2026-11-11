@@ -32,10 +32,56 @@ test("reports the total from a count query, not the number of capped rows", asyn
 });
 
 test("a failed count is unknown, not zero, and the rows still come back", async () => {
-  mockArcGIS((url) => (url.searchParams.get("returnCountOnly") ? json({}, 500) : json(rows(3))));
+  mockArcGIS((url) => (url.searchParams.get("returnCountOnly") ? json({}, 500) : json(rows(50))));
   const result = await queryFeatures(hospitals, query, signal);
-  assert.equal(result.features.length, 3);
+  assert.equal(result.features.length, 50);
   assert.equal(result.total, null);
+});
+
+test("rows that came back under the cap are the total, even if the count failed", async () => {
+  mockArcGIS((url) => (url.searchParams.get("returnCountOnly") ? json({}, 500) : json(rows(3))));
+  assert.equal((await queryFeatures(hospitals, query, signal)).total, 3);
+  // Not when the service says it held rows back.
+  mockArcGIS((url) => (url.searchParams.get("returnCountOnly") ? json({}, 500) : json({ ...rows(3), exceededTransferLimit: true })));
+  assert.equal((await queryFeatures(hospitals, query, signal)).total, null);
+});
+
+test("a count smaller than the rows shown is raised to the rows shown", async () => {
+  mockArcGIS((url) => (url.searchParams.get("returnCountOnly") ? json({ count: 0 }) : json(rows(5))));
+  assert.equal((await queryFeatures(hospitals, query, signal)).total, 5);
+});
+
+test("a count request that never answers does not hold the rows back", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  globalThis.fetch = ((input: string | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (!url.searchParams.get("returnCountOnly")) return Promise.resolve(json(rows(50)));
+    // Hangs until its own deadline aborts it.
+    return new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+  }) as typeof fetch;
+  const pending = queryFeatures(hospitals, query, signal);
+  await new Promise((r) => setImmediate(r));
+  t.mock.timers.tick(5_000);
+  const result = await pending;
+  assert.equal(result.features.length, 50);
+  assert.equal(result.total, null);
+});
+
+test("a rows request that never answers fails with a message, and a cancelled search stays cancelled", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const hang = ((_: string | URL, init?: RequestInit) =>
+    new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))))) as typeof fetch;
+  globalThis.fetch = hang;
+  const pending = queryFeatures(hospitals, query, signal);
+  const failed = assert.rejects(pending, /did not answer within 10 seconds/);
+  await new Promise((r) => setImmediate(r));
+  t.mock.timers.tick(10_000);
+  await failed;
+
+  const search = new AbortController();
+  const cancelled = assert.rejects(queryFeatures(hospitals, query, search.signal), (e: Error) => !/did not answer/.test(e.message));
+  search.abort();
+  await cancelled;
 });
 
 test("an ArcGIS error sent with HTTP 200 is still an error", async () => {
@@ -48,5 +94,7 @@ test("the summary never presents capped rows as the total", () => {
   assert.equal(resultSummary(8, 8), "Found 8 results.");
   assert.equal(resultSummary(1, 1), "Found 1 result.");
   assert.equal(resultSummary(0, 0), "No results found. Try broadening your search.");
+  assert.equal(resultSummary(0, null), "No results found. Try broadening your search.");
+  assert.equal(resultSummary(0, 4), "4 results match, but no rows came back. Try again.");
   assert.match(resultSummary(50, null), /Showing 50 results\. The total number of matches could not be counted\./);
 });

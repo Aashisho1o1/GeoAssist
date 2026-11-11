@@ -62,6 +62,7 @@ export interface ChatMessage {
 export interface ArcGISQueryResponse {
   features?: Feature[];
   count?: number;
+  exceededTransferLimit?: boolean;
   error?: {
     message: string;
     code: number;

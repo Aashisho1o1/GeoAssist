@@ -13,7 +13,7 @@ export const DATASETS: Dataset[] = [
     name: "US Hospitals",
     label: "Hospitals",
     description: "About 7,500 hospitals across the United States",
-    impact: "Find healthcare near you or research medical access equity",
+    impact: "Look up hospitals by state, size, trauma level, or helipad",
     examples: [
       example("Show hospitals in California with more than 500 beds", "STATE='CA' AND BEDS>500",
         "NAME,CITY,STATE,BEDS,TRAUMA", "BEDS DESC", "California hospitals with more than 500 beds, largest first."),
@@ -49,7 +49,7 @@ export const DATASETS: Dataset[] = [
         "NAME,CITY,STATE,LEVEL_,ENROLLMENT", "NAME ASC", "Elementary schools in Claremont, California."),
     ],
     notes: [
-      "TYPE and STATUS hold undocumented codes ('1', '2', ...); do not filter on them",
+      "TYPE and STATUS hold numeric codes ('1', '2', ...). STATUS '1' is an open school; the other codes are closed, inactive, or not yet open. Do not filter on them unless asked",
       "ENROLLMENT and FT_TEACHER use -999 for unknown",
     ],
     icon: "education",
@@ -73,7 +73,7 @@ export const DATASETS: Dataset[] = [
         "NAME,STATE_ABBR,POPULATION", "POPULATION DESC", "Florida cities with more than 200,000 people."),
     ],
     notes: [
-      "CAPITAL: 'State' for state capitals, 'National' for Washington DC, blank otherwise",
+      "CAPITAL: 'State' for state capitals, 'National' for Washington DC, and an empty string for every other city (CAPITAL = '')",
       "POP_CLASS is a numeric size bucket; prefer POPULATION for size filters",
     ],
     icon: "urban-model",
@@ -89,7 +89,7 @@ Fill these fields:
 - where: SQL WHERE clause for ArcGIS (e.g., STATE='CA' AND BEDS>500). Use 1=1 when there is no filter.
 - outFields: comma-separated list of fields to return
 - orderByFields: ORDER BY clause (e.g., BEDS DESC), or an empty string
-- resultRecordCount: integer from 5 to 50; 5-10 for specific questions, 20-50 for broad ones
+- resultRecordCount: integer from 1 to 50. Use the exact number when the user asks for one (the largest = 1, top 3 = 3); otherwise 5-10 for specific questions, 20-50 for broad ones
 - summary: a friendly 1-2 sentence description of what will be shown
 
 RULES:
@@ -99,5 +99,5 @@ RULES:
 - String comparisons use single quotes: STATE='CA'
 - Use LIKE with % for partial matches: NAME LIKE '%MEMORIAL%'
 - Plain SQL only: AND, OR, NOT, IN, LIKE, IS NULL, BETWEEN, UPPER(), LOWER(). No semicolons, comments or subqueries
-- Closed hospitals are left out automatically. Mention STATUS in the filter only when the user asks about closed or all hospitals
+- Hospitals not marked OPEN are left out automatically. Filter on STATUS only when the user asks about closed hospitals (STATUS = 'CLOSED') or all hospitals (STATUS IN ('OPEN','CLOSED'))
 - Always include NAME and the location fields (CITY, STATE or STATE_ABBR) in outFields`;

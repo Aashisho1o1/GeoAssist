@@ -5,16 +5,13 @@ import type { Dataset, LLMQueryResult } from "../types";
 export interface PreparedQuery {
   /** The query that will be sent: checked, with exact field spelling. */
   query: LLMQueryResult;
-  /** True when closed hospitals were left out because the filter didn't mention STATUS. */
+  /** True when the answer is limited to hospitals marked OPEN in the snapshot. */
   openOnlyApplied: boolean;
-  /** Values in an IN list that don't exist in the layer and matched nothing. */
+  /** Values that don't exist in the layer, or could not be checked. */
   warnings: string[];
 }
 
-// The shared core writes its messages for an MCP client. This app has no such
-// tool, so drop the sentence that points at one.
-const reject = (message: string) =>
-  new Error(`Rejected generated query: ${message.replace(/ Call get_dataset_schema[^.]*\./, "")}`);
+const reject = (message: string) => new Error(`Rejected generated query: ${message}`);
 
 /**
  * Runs a generated query through the same gate the geoassist-mcp server
@@ -28,14 +25,12 @@ export function prepareQuery(dataset: Dataset, schema: FieldInfo[], raw: LLMQuer
   const filter = checkFilter(dataset.core, schema, raw.where);
   if (!filter.ok) throw reject(filter.error);
 
-  // outFields: "*" or a list of real fields.
-  let outFields = "*";
+  // outFields: "*" or a list of real fields. Named fields are checked even
+  // when "*" is also present.
   const requested = raw.outFields.split(",").map((f) => f.trim()).filter(Boolean);
-  if (!requested.includes("*")) {
-    const fields = checkFields(requested, names, []);
-    if (!fields.ok) throw reject(fields.error);
-    outFields = fields.list.join(",") || "*";
-  }
+  const fields = checkFields(requested.filter((f) => f !== "*"), names, []);
+  if (!fields.ok) throw reject(fields.error);
+  const outFields = requested.includes("*") ? "*" : fields.list.join(",") || "*";
 
   // ORDER BY: real fields with ASC or DESC only.
   const order = checkOrderBy(raw.orderByFields, names);

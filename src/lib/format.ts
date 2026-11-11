@@ -13,10 +13,12 @@ export function displayValue(value: FeatureAttributes[string] | undefined): stri
  * total comes from a separate count query (null when that query failed).
  */
 export function resultSummary(shown: number, total: number | null): string {
-  if (total === 0 || (total === null && shown === 0)) {
-    return "No results found. Try broadening your search.";
-  }
   const plural = (n: number) => (n === 1 ? "" : "s");
+  if (shown === 0) {
+    return total
+      ? `${total.toLocaleString()} result${plural(total)} match, but no rows came back. Try again.`
+      : "No results found. Try broadening your search.";
+  }
   if (total === null) {
     return `Showing ${shown} result${plural(shown)}. The total number of matches could not be counted.`;
   }

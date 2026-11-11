@@ -42,6 +42,12 @@ test("closed hospitals are only included when the question is about STATUS", () 
   const closed = prepare({ where: "STATUS = 'CLOSED'" });
   assert.equal(closed.query.where, "STATUS = 'CLOSED'");
   assert.equal(closed.openOnlyApplied, false);
+  // Naming the field without asking for another status keeps the rule on.
+  const named = prepare({ where: "STATE='TX' AND STATUS IS NOT NULL" });
+  assert.equal(named.query.where, "(STATE='TX' AND STATUS IS NOT NULL) AND STATUS = 'OPEN'");
+  assert.equal(named.openOnlyApplied, true);
+  // Saying OPEN outright still tells the user closed hospitals are left out.
+  assert.equal(prepare({ where: "STATUS = 'OPEN'" }).openOnlyApplied, true);
   // Other datasets have no such rule.
   const schoolSchema = [field("NAME"), field("STATE")];
   assert.equal(prepareQuery(schools, schoolSchema, query({ outFields: "NAME" })).query.where, "1=1");
@@ -59,6 +65,42 @@ test("rejects a value that is not in a coded field", () => {
   const r = prepare({ where: "TRAUMA IN ('LEVEL I', 'LEVEL  I')" });
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /'LEVEL {2}I' is not a value of TRAUMA/);
+});
+
+test("an unknown value beside OR or NOT is a warning, because the rest may still match", () => {
+  const r = prepare({ where: "HELIPAD = 'YES' OR STATE = 'CA'" });
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /'YES' is not a value of HELIPAD.*that part of the filter matches nothing/);
+  assert.equal(prepare({ where: "NOT (HELIPAD = 'YES')" }).warnings.length, 1);
+});
+
+test("an empty string is a real value: cities that are not capitals", () => {
+  const citySchema = [field("NAME"), field("STATE_ABBR"), field("CAPITAL", { examples: ["", "National", "State"], all_values: true })];
+  const r = prepareQuery(cities, citySchema, query({ where: "CAPITAL = ''", outFields: "NAME,STATE_ABBR" }));
+  assert.equal(r.query.where, "CAPITAL = ''");
+  assert.deepEqual(r.warnings, []);
+});
+
+test("named output fields are checked even beside a star", () => {
+  assert.equal(prepare({ outFields: "*" }).query.outFields, "*");
+  assert.equal(prepare({ outFields: "NAME,*" }).query.outFields, "*");
+  assert.equal(prepare({ outFields: "" }).query.outFields, "*");
+  assert.throws(() => prepare({ outFields: "*,BOGUS_FIELD" }), /Unknown output field 'BOGUS_FIELD'/);
+});
+
+test("every pre-translated example passes the gate", () => {
+  // Field names only: the stand-in schema has no value lists.
+  const names: Record<string, string[]> = {
+    hospitals: ["NAME", "CITY", "STATE", "BEDS", "TRAUMA", "HELIPAD", "OWNER", "STATUS"],
+    schools: ["NAME", "CITY", "STATE", "COUNTY", "LEVEL_", "ENROLLMENT", "FT_TEACHER"],
+    cities: ["NAME", "STATE_ABBR", "POPULATION", "CAPITAL"],
+  };
+  for (const dataset of DATASETS) {
+    const schema = names[dataset.id].map((n) => field(n));
+    for (const example of dataset.examples) {
+      assert.doesNotThrow(() => prepareQuery(dataset, schema, example.query), example.question);
+    }
+  }
 });
 
 test("rejects statements, comments, subqueries and odd ORDER BY", () => {

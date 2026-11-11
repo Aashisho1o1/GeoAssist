@@ -44,6 +44,27 @@ const MapPanel = lazy(() =>
   import("./components/MapPanel").then((module) => ({ default: module.MapPanel }))
 );
 
+// The saved key, if the person asked for it to be remembered. Storage can be
+// unavailable (private windows, blocked site data), so every call is guarded.
+const STORAGE_KEY = "geoassist_api_key";
+const storedKey = {
+  read(): string {
+    try {
+      return localStorage.getItem(STORAGE_KEY) || "";
+    } catch {
+      return "";
+    }
+  },
+  write(key: string): void {
+    try {
+      if (key) localStorage.setItem(STORAGE_KEY, key);
+      else localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Nothing to do: the key still works for this tab.
+    }
+  },
+};
+
 function App() {
   const [darkMode, setDarkMode] = useState(true);
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
@@ -53,11 +74,17 @@ function App() {
   const [currentQuery, setCurrentQuery] = useState<LLMQueryResult | null>(null);
   const [queryText, setQueryText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("geoassist_api_key") || "");
+  // The key in use. It lives in memory only, unless the person ticked
+  // "Remember" (or saved one with an earlier version of the app).
+  const [apiKey, setApiKey] = useState(() => storedKey.read());
+  // What is typed in the dialog. It becomes the key in use only on Save.
+  const [draftKey, setDraftKey] = useState("");
+  const [rememberKey, setRememberKey] = useState(() => storedKey.read() !== "");
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
-  // Last-edit date of the selected layer, read from the service. Keyed by
+  // Data-edit date of the selected layer, read from the service. Keyed by
   // dataset id so a slow reply for one dataset never labels another.
-  const [lastEdited, setLastEdited] = useState<{ id: string; date: string | null } | null>(null);
+  // `date` is null when the service reports none; `failed` when it could not be read.
+  const [lastEdited, setLastEdited] = useState<{ id: string; date: string | null; failed?: boolean } | null>(null);
 
   const liveRegionRef = useRef<HTMLDivElement | null>(null);
   // Set while a search is in flight; replaced or cleared to make that search stale.
@@ -69,9 +96,10 @@ function App() {
 
   useEffect(() => {
     if (!selectedDataset) return;
+    const id = selectedDataset.id;
     getDataSource(selectedDataset.core)
-      .then((source) => setLastEdited({ id: selectedDataset.id, date: source.layer_last_edited }))
-      .catch(() => {});
+      .then((source) => setLastEdited({ id, date: source.layer_last_edited }))
+      .catch(() => setLastEdited({ id, date: null, failed: true }));
   }, [selectedDataset]);
 
   const announceToScreenReader = useCallback((message: string) => {
@@ -99,14 +127,20 @@ function App() {
 
   const handleBackToDatasets = useCallback(() => resetSession(null), [resetSession]);
 
+  const openApiKeyDialog = useCallback(() => {
+    setDraftKey(apiKey);
+    setShowApiKeyDialog(true);
+  }, [apiKey]);
+
   const handleSearch = useCallback(
     async (searchText?: string) => {
       const question = searchText || queryText;
       if (!question.trim() || !selectedDataset || searchRef.current) return;
-      // Without a key, only the pre-translated examples can run.
-      const example = apiKey ? undefined : selectedDataset.examples.find((e) => e.question === question);
+      // Example questions always run their pre-translated query, with or
+      // without a key, so a wrong key can't break them and they cost nothing.
+      const example = selectedDataset.examples.find((e) => e.question === question);
       if (!apiKey && !example) {
-        setShowApiKeyDialog(true);
+        openApiKeyDialog();
         return;
       }
 
@@ -128,6 +162,11 @@ function App() {
         // Fields, types and real values, read from the live layer (cached for an hour).
         const schema = await getSchema(selectedDataset.core);
         if (isStale()) return;
+        // Reading the schema also reads the layer's edit date, so fill it in
+        // here in case the first attempt failed.
+        getDataSource(selectedDataset.core)
+          .then((source) => setLastEdited({ id: selectedDataset.id, date: source.layer_last_edited }))
+          .catch(() => {});
 
         const generated =
           example?.query ?? (await translateQuestion(apiKey, question, selectedDataset, schema, search.signal));
@@ -146,7 +185,7 @@ function App() {
         const summary = example ? `${queryParams.summary} (Pre-translated example.)` : queryParams.summary;
         const counts = resultSummary(results.length, total);
         const notes = [
-          ...(openOnlyApplied ? ["Closed hospitals are left out."] : []),
+          ...(openOnlyApplied ? ["Only hospitals marked open in this snapshot are included."] : []),
           ...warnings,
         ];
 
@@ -171,13 +210,23 @@ function App() {
         }
       }
     },
-    [queryText, selectedDataset, apiKey, announceToScreenReader]
+    [queryText, selectedDataset, apiKey, announceToScreenReader, openApiKeyDialog]
   );
 
   const handleApiKeySave = useCallback(() => {
-    localStorage.setItem("geoassist_api_key", apiKey);
+    const key = draftKey.trim();
+    setApiKey(key);
+    storedKey.write(rememberKey ? key : "");
     setShowApiKeyDialog(false);
-  }, [apiKey]);
+  }, [draftKey, rememberKey]);
+
+  const handleApiKeyRemove = useCallback(() => {
+    setApiKey("");
+    setDraftKey("");
+    setRememberKey(false);
+    storedKey.write("");
+    setShowApiKeyDialog(false);
+  }, []);
 
   return (
     <>
@@ -195,7 +244,8 @@ function App() {
           <calcite-notice open icon="information" scale="s" kind="info">
             <div slot="message">
               The example questions work without a key. To ask your own, add a Claude
-              API key. It is stored in your browser and sent only to Anthropic&apos;s API.
+              API key. It is sent only to Anthropic&apos;s API, straight from this page. By
+              default it is kept in memory and forgotten when you close or reload the tab.
             </div>
           </calcite-notice>
           <div style={{ marginTop: "1rem" }}>
@@ -204,19 +254,33 @@ function App() {
               <calcite-input-text
                 type="password"
                 placeholder="sk-ant-..."
-                value={apiKey}
+                value={draftKey}
                 oncalciteInputTextInput={(e: Event) => {
                   const target = e.target as HTMLCalciteInputTextElement;
-                  setApiKey(target.value);
+                  setDraftKey(target.value);
                 }}
               />
             </calcite-label>
+            <label className="remember-key">
+              <input
+                type="checkbox"
+                checked={rememberKey}
+                onChange={(e) => setRememberKey(e.target.checked)}
+              />
+              Remember on this device. The key is then saved in this browser&apos;s storage,
+              where other pages on this site could read it.
+            </label>
           </div>
         </div>
+        {apiKey && (
+          <calcite-button slot="footer-start" kind="danger" appearance="outline" onClick={handleApiKeyRemove}>
+            Remove key
+          </calcite-button>
+        )}
         <calcite-button
           slot="footer-end"
           onClick={handleApiKeySave}
-          disabled={!apiKey || undefined}
+          disabled={!draftKey.trim() || undefined}
         >
           Save
         </calcite-button>
@@ -228,14 +292,14 @@ function App() {
           <calcite-navigation-logo
             slot="logo"
             heading="GeoAssist"
-            description="Ask any map a question"
+            description="Plain-English questions for public ArcGIS layers"
             icon="globe"
           />
           <div slot="content-end" style={{ display: "flex", gap: "0.25rem" }}>
             <calcite-action
               text="API Key"
               icon="key"
-              onClick={() => setShowApiKeyDialog(true)}
+              onClick={openApiKeyDialog}
               aria-label="Configure API key"
             />
             <calcite-action
@@ -310,9 +374,13 @@ function App() {
                     {selectedDataset.core.source.origin}
                   </a>
                   , hosted by {selectedDataset.core.source.hosted_by}.{" "}
-                  {lastEdited?.id === selectedDataset.id && lastEdited.date
-                    ? `Layer last edited ${lastEdited.date}.`
-                    : "Layer edit date not available."}{" "}
+                  {lastEdited?.id !== selectedDataset.id
+                    ? "Reading the layer's edit date."
+                    : lastEdited.date
+                      ? `Data last edited ${lastEdited.date}.`
+                      : lastEdited.failed
+                        ? "The layer's edit date could not be read."
+                        : "The layer does not report an edit date."}{" "}
                   A public snapshot, not a live feed.
                 </p>
 
