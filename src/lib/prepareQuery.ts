@@ -39,6 +39,9 @@ export function prepareQuery(dataset: Dataset, schema: FieldInfo[], raw: LLMQuer
   return {
     query: { ...raw, where: filter.where, outFields, orderByFields: order.orderBy || undefined },
     openOnlyApplied: filter.openOnlyApplied,
-    warnings: filter.warnings,
+    // The person asks in plain English, so the advice is about the question, not SQL.
+    warnings: filter.statusUnread
+      ? [...filter.warnings, "To leave closed hospitals out, ask again and say open hospitals only."]
+      : filter.warnings,
   };
 }

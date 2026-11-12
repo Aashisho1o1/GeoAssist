@@ -162,4 +162,9 @@ test("a filter that uses STATUS in a form the check can't read keeps its rows an
   assert.equal(r.query.where, "STATUS LIKE 'C%'");
   assert.equal(r.openOnlyApplied, false);
   assert.match(r.warnings.join(" "), /were not left out/);
+  assert.match(r.warnings.join(" "), /ask again and say open hospitals only/);
+  // A top-level AND STATUS = 'OPEN' already limits the answer to open hospitals.
+  const both = prepare({ where: "STATUS LIKE 'O%' AND STATUS = 'OPEN'" });
+  assert.equal(both.openOnlyApplied, true);
+  assert.deepEqual(both.warnings, []);
 });

@@ -99,5 +99,5 @@ RULES:
 - String comparisons use single quotes: STATE='CA'
 - Use LIKE with % for partial matches: NAME LIKE '%MEMORIAL%'
 - Plain SQL only: AND, OR, NOT, IN, LIKE, IS NULL, BETWEEN, UPPER(), LOWER(). No semicolons, comments or subqueries
-- Hospitals not marked OPEN are left out automatically. Filter on STATUS only when the user asks about closed hospitals (STATUS = 'CLOSED') or all hospitals (STATUS IN ('OPEN','CLOSED'))
+- Hospitals not marked OPEN are left out automatically. Filter on STATUS only when the user asks about closed hospitals (STATUS = 'CLOSED') or all hospitals (STATUS IN ('OPEN','CLOSED')), and only with = or IN, never LIKE
 - Always include NAME and the location fields (CITY, STATE or STATE_ABBR) in outFields`;
