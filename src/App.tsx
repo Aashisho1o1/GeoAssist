@@ -35,12 +35,26 @@ import { ResultsList } from "./components/ResultsList";
 import { QueryInspector } from "./components/QueryInspector";
 import { ExampleQuestions } from "./components/ExampleQuestions";
 import { translateQuestion } from "./lib/translate";
+import { getSchema, getDataSource } from "geoassist-hazard-proximity/core";
 import { queryFeatures } from "./lib/arcgis";
-import { validateQuery } from "./lib/validateQuery";
+import { resultSummary } from "./lib/format";
+import { prepareQuery } from "./lib/prepareQuery";
 
 const MapPanel = lazy(() =>
   import("./components/MapPanel").then((module) => ({ default: module.MapPanel }))
 );
+
+// Earlier versions saved the key in localStorage under this name. The key
+// now lives in memory only, so a copy left by an old version is deleted on
+// load. Storage can be unavailable (private windows, blocked site data).
+const OLD_STORAGE_KEY = "geoassist_api_key";
+function forgetStoredKey(): void {
+  try {
+    localStorage.removeItem(OLD_STORAGE_KEY);
+  } catch {
+    // Nothing stored, or storage is blocked: either way nothing is kept.
+  }
+}
 
 function App() {
   const [darkMode, setDarkMode] = useState(true);
@@ -51,16 +65,39 @@ function App() {
   const [currentQuery, setCurrentQuery] = useState<LLMQueryResult | null>(null);
   const [queryText, setQueryText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("geoassist_api_key") || "");
+  // The key in use. It lives in memory only and is gone on reload.
+  const [apiKey, setApiKey] = useState("");
+  // What is typed in the dialog. It becomes the key in use only on Save.
+  const [draftKey, setDraftKey] = useState("");
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
+  // Data-edit date of the selected layer, read from the service. Keyed by
+  // dataset id so a slow reply for one dataset never labels another.
+  // `date` is null when the service reports none; `failed` when it could not be read.
+  // The layer edit date per dataset. Kept by id, so a slow answer for a
+  // dataset the person already left fills in only that dataset's line.
+  const [editDates, setEditDates] = useState<Record<string, { date: string | null; failed?: boolean }>>({});
+  const recordEditDate = useCallback((id: string, value: { date: string | null; failed?: boolean }) => {
+    // A late failure never replaces a date that was already read.
+    setEditDates((prev) => (value.failed && prev[id] && !prev[id].failed ? prev : { ...prev, [id]: value }));
+  }, []);
 
   const liveRegionRef = useRef<HTMLDivElement | null>(null);
   // Set while a search is in flight; replaced or cleared to make that search stale.
   const searchRef = useRef<AbortController | null>(null);
 
+  useEffect(forgetStoredKey, []);
+
   useEffect(() => {
     document.documentElement.classList.toggle("calcite-mode-dark", darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    if (!selectedDataset) return;
+    const id = selectedDataset.id;
+    getDataSource(selectedDataset.core)
+      .then((source) => recordEditDate(id, { date: source.layer_last_edited }))
+      .catch(() => recordEditDate(id, { date: null, failed: true }));
+  }, [selectedDataset, recordEditDate]);
 
   const announceToScreenReader = useCallback((message: string) => {
     if (liveRegionRef.current) {
@@ -87,14 +124,20 @@ function App() {
 
   const handleBackToDatasets = useCallback(() => resetSession(null), [resetSession]);
 
+  const openApiKeyDialog = useCallback(() => {
+    setDraftKey(apiKey);
+    setShowApiKeyDialog(true);
+  }, [apiKey]);
+
   const handleSearch = useCallback(
     async (searchText?: string) => {
       const question = searchText || queryText;
       if (!question.trim() || !selectedDataset || searchRef.current) return;
-      // Without a key, only the pre-translated examples can run.
-      const example = apiKey ? undefined : selectedDataset.examples.find((e) => e.question === question);
+      // Example questions always run their pre-translated query, with or
+      // without a key, so a wrong key can't break them and they cost nothing.
+      const example = selectedDataset.examples.find((e) => e.question === question);
       if (!apiKey && !example) {
-        setShowApiKeyDialog(true);
+        openApiKeyDialog();
         return;
       }
 
@@ -104,37 +147,51 @@ function App() {
       setLoading(true);
       setQueryText("");
       setSelectedIndex(null);
+      // Clear the last answer now, so a failed or rejected search never
+      // leaves the previous question's results on the map and in the list.
+      setFeatures(null);
+      setCurrentQuery(null);
 
       setChatHistory((prev) => [...prev, { role: "user", text: question }]);
       announceToScreenReader(`Searching: ${question}`);
 
       try {
-        const queryParams =
-          example?.query ?? (await translateQuestion(apiKey, question, selectedDataset, search.signal));
+        // Fields, types and real values, read from the live layer (cached for an hour).
+        const schema = await getSchema(selectedDataset.core);
         if (isStale()) return;
-        setCurrentQuery(queryParams);
-        validateQuery(queryParams, selectedDataset.fields);
+        // Reading the schema also reads the layer's edit date, so fill it in
+        // here in case the first attempt failed.
+        getDataSource(selectedDataset.core)
+          .then((source) => recordEditDate(selectedDataset.id, { date: source.layer_last_edited }))
+          .catch(() => {});
 
-        const results = await queryFeatures(selectedDataset, queryParams, search.signal);
+        const generated =
+          example?.query ?? (await translateQuestion(apiKey, question, selectedDataset, schema, search.signal));
+        if (isStale()) return;
+        // Show what was generated even if the check below refuses it.
+        setCurrentQuery(generated);
+
+        // The same gate geoassist-mcp uses. Throws before anything reaches ArcGIS.
+        const { query: queryParams, openOnlyApplied, warnings } = prepareQuery(selectedDataset, schema, generated);
+        setCurrentQuery(queryParams);
+
+        const { features: results, total } = await queryFeatures(selectedDataset, queryParams, search.signal);
         if (isStale()) return;
         setFeatures(results);
 
         const summary = example ? `${queryParams.summary} (Pre-translated example.)` : queryParams.summary;
-        const summaryText =
-          results.length > 0
-            ? `${summary} — Found ${results.length} result${results.length !== 1 ? "s" : ""}.`
-            : `${summary} — No results found. Try broadening your search.`;
+        const counts = resultSummary(results.length, total);
+        const notes = [
+          ...(openOnlyApplied ? ["Only hospitals marked open in this snapshot are included."] : []),
+          ...warnings,
+        ];
 
         setChatHistory((prev) => [
           ...prev,
-          { role: "assistant", text: summaryText, count: results.length },
+          { role: "assistant", text: [summary, counts, ...notes].join(" "), count: results.length },
         ]);
 
-        announceToScreenReader(
-          results.length > 0
-            ? `Found ${results.length} results. ${queryParams.summary}`
-            : "No results found. Try a different question."
-        );
+        announceToScreenReader(`${counts} ${queryParams.summary}`);
       } catch (err) {
         if (isStale()) return;
         const message = err instanceof Error ? err.message : "An error occurred";
@@ -150,13 +207,19 @@ function App() {
         }
       }
     },
-    [queryText, selectedDataset, apiKey, announceToScreenReader]
+    [queryText, selectedDataset, apiKey, announceToScreenReader, openApiKeyDialog, recordEditDate]
   );
 
   const handleApiKeySave = useCallback(() => {
-    localStorage.setItem("geoassist_api_key", apiKey);
+    setApiKey(draftKey.trim());
     setShowApiKeyDialog(false);
-  }, [apiKey]);
+  }, [draftKey]);
+
+  const handleApiKeyRemove = useCallback(() => {
+    setApiKey("");
+    setDraftKey("");
+    setShowApiKeyDialog(false);
+  }, []);
 
   return (
     <>
@@ -174,7 +237,8 @@ function App() {
           <calcite-notice open icon="information" scale="s" kind="info">
             <div slot="message">
               The example questions work without a key. To ask your own, add a Claude
-              API key. It is stored in your browser and sent only to Anthropic&apos;s API.
+              API key. It is sent only to Anthropic&apos;s API, straight from this page. It is
+              kept in memory only, never saved, and forgotten when you close or reload the tab.
             </div>
           </calcite-notice>
           <div style={{ marginTop: "1rem" }}>
@@ -183,19 +247,24 @@ function App() {
               <calcite-input-text
                 type="password"
                 placeholder="sk-ant-..."
-                value={apiKey}
+                value={draftKey}
                 oncalciteInputTextInput={(e: Event) => {
                   const target = e.target as HTMLCalciteInputTextElement;
-                  setApiKey(target.value);
+                  setDraftKey(target.value);
                 }}
               />
             </calcite-label>
           </div>
         </div>
+        {apiKey && (
+          <calcite-button slot="footer-start" kind="danger" appearance="outline" onClick={handleApiKeyRemove}>
+            Remove key
+          </calcite-button>
+        )}
         <calcite-button
           slot="footer-end"
           onClick={handleApiKeySave}
-          disabled={!apiKey || undefined}
+          disabled={!draftKey.trim() || undefined}
         >
           Save
         </calcite-button>
@@ -207,14 +276,14 @@ function App() {
           <calcite-navigation-logo
             slot="logo"
             heading="GeoAssist"
-            description="Ask any map a question"
+            description="Plain-English questions for public ArcGIS layers"
             icon="globe"
           />
           <div slot="content-end" style={{ display: "flex", gap: "0.25rem" }}>
             <calcite-action
               text="API Key"
               icon="key"
-              onClick={() => setShowApiKeyDialog(true)}
+              onClick={openApiKeyDialog}
               aria-label="Configure API key"
             />
             <calcite-action
@@ -281,6 +350,23 @@ function App() {
                     onSelect={setSelectedIndex}
                   />
                 )}
+
+                {/* Where the data comes from and how old it is */}
+                <p className="data-source">
+                  Source:{" "}
+                  <a href={selectedDataset.core.source.item_url} target="_blank" rel="noopener noreferrer">
+                    {selectedDataset.core.source.origin}
+                  </a>
+                  , hosted by {selectedDataset.core.source.hosted_by}.{" "}
+                  {!editDates[selectedDataset.id]
+                    ? "Reading the layer's edit date."
+                    : editDates[selectedDataset.id].date
+                      ? `Data last edited ${editDates[selectedDataset.id].date}.`
+                      : editDates[selectedDataset.id].failed
+                        ? "The layer's edit date could not be read."
+                        : "The layer does not report an edit date."}{" "}
+                  A public snapshot, not a live feed.
+                </p>
 
                 {/* Input area */}
                 <div

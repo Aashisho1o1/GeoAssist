@@ -100,4 +100,6 @@ export function highlightResult(view: __esri.MapView, feature: Feature): void {
 export function clearResults(view: __esri.MapView): void {
   layer(view, RESULTS_LAYER_ID).removeAll();
   layer(view, HIGHLIGHT_LAYER_ID).removeAll();
+  // A popup is not tied to the graphics, so it would stay open on the old result.
+  view.closePopup();
 }
