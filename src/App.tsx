@@ -44,26 +44,17 @@ const MapPanel = lazy(() =>
   import("./components/MapPanel").then((module) => ({ default: module.MapPanel }))
 );
 
-// The saved key, if the person asked for it to be remembered. Storage can be
-// unavailable (private windows, blocked site data), so every call is guarded.
-const STORAGE_KEY = "geoassist_api_key";
-const storedKey = {
-  read(): string {
-    try {
-      return localStorage.getItem(STORAGE_KEY) || "";
-    } catch {
-      return "";
-    }
-  },
-  write(key: string): void {
-    try {
-      if (key) localStorage.setItem(STORAGE_KEY, key);
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // Nothing to do: the key still works for this tab.
-    }
-  },
-};
+// Earlier versions saved the key in localStorage under this name. The key
+// now lives in memory only, so a copy left by an old version is deleted on
+// load. Storage can be unavailable (private windows, blocked site data).
+const OLD_STORAGE_KEY = "geoassist_api_key";
+function forgetStoredKey(): void {
+  try {
+    localStorage.removeItem(OLD_STORAGE_KEY);
+  } catch {
+    // Nothing stored, or storage is blocked: either way nothing is kept.
+  }
+}
 
 function App() {
   const [darkMode, setDarkMode] = useState(true);
@@ -74,12 +65,10 @@ function App() {
   const [currentQuery, setCurrentQuery] = useState<LLMQueryResult | null>(null);
   const [queryText, setQueryText] = useState("");
   const [loading, setLoading] = useState(false);
-  // The key in use. It lives in memory only, unless the person ticked
-  // "Remember" (or saved one with an earlier version of the app).
-  const [apiKey, setApiKey] = useState(() => storedKey.read());
+  // The key in use. It lives in memory only and is gone on reload.
+  const [apiKey, setApiKey] = useState("");
   // What is typed in the dialog. It becomes the key in use only on Save.
   const [draftKey, setDraftKey] = useState("");
-  const [rememberKey, setRememberKey] = useState(() => storedKey.read() !== "");
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
   // Data-edit date of the selected layer, read from the service. Keyed by
   // dataset id so a slow reply for one dataset never labels another.
@@ -95,6 +84,8 @@ function App() {
   const liveRegionRef = useRef<HTMLDivElement | null>(null);
   // Set while a search is in flight; replaced or cleared to make that search stale.
   const searchRef = useRef<AbortController | null>(null);
+
+  useEffect(forgetStoredKey, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle("calcite-mode-dark", darkMode);
@@ -220,17 +211,13 @@ function App() {
   );
 
   const handleApiKeySave = useCallback(() => {
-    const key = draftKey.trim();
-    setApiKey(key);
-    storedKey.write(rememberKey ? key : "");
+    setApiKey(draftKey.trim());
     setShowApiKeyDialog(false);
-  }, [draftKey, rememberKey]);
+  }, [draftKey]);
 
   const handleApiKeyRemove = useCallback(() => {
     setApiKey("");
     setDraftKey("");
-    setRememberKey(false);
-    storedKey.write("");
     setShowApiKeyDialog(false);
   }, []);
 
@@ -250,8 +237,8 @@ function App() {
           <calcite-notice open icon="information" scale="s" kind="info">
             <div slot="message">
               The example questions work without a key. To ask your own, add a Claude
-              API key. It is sent only to Anthropic&apos;s API, straight from this page. By
-              default it is kept in memory and forgotten when you close or reload the tab.
+              API key. It is sent only to Anthropic&apos;s API, straight from this page. It is
+              kept in memory only, never saved, and forgotten when you close or reload the tab.
             </div>
           </calcite-notice>
           <div style={{ marginTop: "1rem" }}>
@@ -267,15 +254,6 @@ function App() {
                 }}
               />
             </calcite-label>
-            <label className="remember-key">
-              <input
-                type="checkbox"
-                checked={rememberKey}
-                onChange={(e) => setRememberKey(e.target.checked)}
-              />
-              Remember on this device. The key is then saved in this browser&apos;s storage,
-              where other pages on this site could read it.
-            </label>
           </div>
         </div>
         {apiKey && (

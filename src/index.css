@@ -67,12 +67,3 @@ calcite-panel {
   }
 }
 
-.remember-key {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-  margin-top: 0.75rem;
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  color: var(--calcite-color-text-2);
-}

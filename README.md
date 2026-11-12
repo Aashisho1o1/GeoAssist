@@ -125,9 +125,9 @@ The model is given the same live schema: every field with its type, real example
 
 - Open the app and click the **API Key** action in the header.
 - Paste your Claude key (`sk-ant-...`) and save. The key takes effect on Save, not while typing.
-- By default the key is kept in memory and is gone when the tab is closed or reloaded.
-- Tick **Remember on this device** to save it in browser `localStorage` under `geoassist_api_key`. GitHub Pages serves every project of an account from one origin, so other pages on that origin could read a saved key.
-- **Remove key** clears it from memory and from storage.
+- The key is kept in memory only. It is never written to browser storage, and it is gone when the tab is closed or reloaded.
+- A key saved by an earlier version of the app (`localStorage`, `geoassist_api_key`) is deleted when the app loads.
+- **Remove key** clears it from memory.
 
 ## Deployment (GitHub Pages)
 
