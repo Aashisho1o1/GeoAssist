@@ -32,7 +32,7 @@ const prepare = (over: Partial<LLMQueryResult>) => prepareQuery(hospitals, HOSPI
 test("a good query comes back with exact field spelling and the open-only rule", () => {
   const r = prepare({ where: "state='CA' and beds>500", outFields: "name, beds", orderByFields: "beds desc" });
   assert.equal(r.query.where, "(STATE='CA' AND BEDS>500) AND STATUS = 'OPEN'");
-  assert.equal(r.query.outFields, "NAME,BEDS");
+  assert.equal(r.query.outFields, "NAME,BEDS,CITY,STATE");
   assert.equal(r.query.orderByFields, "BEDS DESC");
   assert.equal(r.openOnlyApplied, true);
 });
@@ -67,11 +67,15 @@ test("rejects a value that is not in a coded field", () => {
   assert.match(r.warnings[0], /'LEVEL {2}I' is not a value of TRAUMA/);
 });
 
-test("an unknown value beside OR or NOT is a warning, because the rest may still match", () => {
+test("an unknown value is refused only when every matching row needs it", () => {
+  // Below an OR the rest may still match: a warning.
   const r = prepare({ where: "HELIPAD = 'YES' OR STATE = 'CA'" });
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /'YES' is not a value of HELIPAD.*that part of the filter matches nothing/);
-  assert.equal(prepare({ where: "NOT (HELIPAD = 'YES')" }).warnings.length, 1);
+  // Joined by AND only, even next to a NOT on another field: it can match nothing.
+  assert.throws(() => prepare({ where: "HELIPAD = 'YES' AND NOT BEDS > 5" }), /'YES' is not a value of HELIPAD/);
+  // Under NOT it leaves nothing out, like HELIPAD <> 'YES', so it is not checked.
+  assert.deepEqual(prepare({ where: "NOT (HELIPAD = 'YES')" }).warnings, []);
 });
 
 test("an empty string is a real value: cities that are not capitals", () => {
@@ -79,6 +83,14 @@ test("an empty string is a real value: cities that are not capitals", () => {
   const r = prepareQuery(cities, citySchema, query({ where: "CAPITAL = ''", outFields: "NAME,STATE_ABBR" }));
   assert.equal(r.query.where, "CAPITAL = ''");
   assert.deepEqual(r.warnings, []);
+});
+
+test("the name and place fields are always asked for, so a result card is never 'Unknown'", () => {
+  // The model listed only BEDS: the card still needs NAME, CITY and STATE.
+  assert.equal(prepare({ outFields: "BEDS" }).query.outFields, "BEDS,NAME,CITY,STATE");
+  // Only fields the layer has are added (cities use STATE_ABBR).
+  const citySchema = [field("NAME"), field("STATE_ABBR"), field("POPULATION")];
+  assert.equal(prepareQuery(cities, citySchema, query({ outFields: "POPULATION" })).query.outFields, "POPULATION,NAME,STATE_ABBR");
 });
 
 test("named output fields are checked even beside a star", () => {

@@ -9,7 +9,8 @@ const MIN_RESULT_RECORD_COUNT = 1;
 const DEFAULT_RESULT_RECORD_COUNT = 20;
 const MAX_RESULT_RECORD_COUNT = 50;
 
-// Structured outputs guarantee the response matches this shape.
+// Structured outputs make a complete response match this shape. A response
+// cut off at max_tokens can still be partial JSON (see readQuery).
 const QUERY_SCHEMA = {
   type: "object",
   properties: {
@@ -64,13 +65,26 @@ export async function translateQuestion(
     throw err;
   }
 
+  return readQuery(response);
+}
+
+/** The query in Claude's response, or an error a person can act on. */
+export function readQuery(response: Pick<Anthropic.Message, "stop_reason" | "content">): LLMQueryResult {
   if (response.stop_reason === "refusal") {
     throw new Error("Claude declined this question. Try rephrasing.");
+  }
+  if (response.stop_reason === "max_tokens") {
+    throw new Error("Claude's answer was cut off before the query was complete. Try a simpler question.");
   }
   const text = response.content.find((block) => block.type === "text")?.text;
   if (!text) throw new Error("Claude returned no query. Try rephrasing.");
 
-  const raw = JSON.parse(text) as RawQuery;
+  let raw: RawQuery;
+  try {
+    raw = JSON.parse(text) as RawQuery;
+  } catch {
+    throw new Error("Claude returned a query that could not be read. Try rephrasing.");
+  }
   return {
     where: raw.where.trim() || "1=1",
     outFields: raw.outFields.trim() || "*",
