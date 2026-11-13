@@ -29,7 +29,7 @@ Public GIS datasets are powerful but hard to query without ArcGIS REST syntax. G
 ## Architecture Flow
 
 1. User selects a dataset and submits a question.
-2. The app reads the layer's schema (fields, types, real values) from the service. `lib/translate.ts` sends the question and that schema to Claude, which returns query params as schema-checked JSON. Example questions never call Claude, with or without a key: they use their pre-translated query.
+2. The app reads the layer's schema (fields, types, real values) from the service. `lib/translate.ts` sends the question and that schema to Claude, which returns query params as schema-checked JSON. A reply that was cut off or is not valid JSON is reported as an error you can act on, never parsed as a query. Example questions never call Claude, with or without a key: they use their pre-translated query.
 3. `lib/prepareQuery.ts` runs the query through the shared gate, which rejects unknown fields, unsafe SQL, and values that are not in the layer.
 4. `lib/arcgis.ts` calls `{featureServiceUrl}/query` twice in parallel: once for the rows to show, once with `returnCountOnly=true` for the total.
 5. `MapPanel` + `lib/mapGraphics.ts` render results and handle highlighting.
@@ -82,7 +82,7 @@ npm run lint
 npm test
 ```
 
-The tests cover how the app uses the shared gate, the text the model is shown, the row and count requests (with ArcGIS mocked, so they run offline), and the result summary. The gate itself is tested in geoassist-mcp. There are no UI tests yet.
+The tests cover how the app uses the shared gate, the text the model is shown, the row and count requests (with ArcGIS mocked, so they run offline), how a Claude reply is read (including one cut off at the token limit), and the result summary. The gate itself is tested in geoassist-mcp. There are no UI tests yet.
 
 ## Data sources
 
@@ -98,11 +98,11 @@ Dates are as checked on November 11, 2026. The app reads each layer's data-edit 
 
 GeoAssist does not have its own validator. It imports the query core of [geoassist-mcp](https://github.com/Aashisho1o1/geoassist-mcp) (`geoassist-hazard-proximity/core`, installed from GitHub at a pinned commit), so both projects run the same checks and those checks are tested in one place. `lib/prepareQuery.ts` calls it before any request is sent:
 
-- Field names in `where`, `outFields` and `orderByFields` must exist in the schema read from the live layer. A typo comes back with the nearest real field.
+- Field names in `where`, `outFields` and `orderByFields` must exist in the schema read from the live layer. A typo comes back with the nearest real field. `NAME`, `CITY` and the state field are always added to `outFields`, so every result has a name and a place.
 - Only values, comparison operators, and a short list of SQL words are allowed (`AND`, `OR`, `NOT`, `IN`, `LIKE`, `IS`, `NULL`, `BETWEEN`, `UPPER`, `LOWER`). `;`, `--`, `/*`, and subqueries are refused. Words inside quoted values are treated as values, so a hospital named "Select Specialty" can be searched.
 - For coded fields (for example `STATUS`, `HELIPAD`, `TRAUMA`, `LEVEL_`), a quoted value in `FIELD = '...'` must exist in the layer. In an `IN (...)` list, values that don't exist are allowed as long as one does, and the answer names the ones that matched nothing.
-- A query is only refused over a value when it can be shown to match nothing, which means every condition is joined by `AND`. With `OR` or `NOT` in the filter the rest may still match, so the query runs and the answer names the unknown value.
-- For hospitals, `STATUS = 'OPEN'` is added unless the filter itself asks for another status (`STATUS = 'CLOSED'`), and the answer says only hospitals marked open in the snapshot are included. Naming the field some other way (`STATUS IS NOT NULL`) does not switch this off. If the filter uses `STATUS` in a form the check can't read (`STATUS LIKE 'C%'`, `STATUS IS NULL`), the rule is left off and the answer says so, because adding `STATUS = 'OPEN'` could turn that filter into an empty one. A filter that already has `AND STATUS = 'OPEN'` at its top level counts as open-only.
+- A query is only refused over a value when it can be shown to match nothing: the comparison is joined to the rest of the filter by `AND` only, so every matching row would need the value. Below an `OR` the rest may still match, so the query runs and the answer names the unknown value. Only a whole comparison is checked, and values after `<>`, `NOT IN` or `NOT` are not checked.
+- For hospitals, `STATUS = 'OPEN'` is added unless the filter itself asks for another status (`STATUS = 'CLOSED'`, `NOT (STATUS = 'OPEN')`), and the answer says only hospitals marked open in the snapshot are included. Naming the field some other way (`STATUS IS NOT NULL`) does not switch this off, and neither does a `NOT` on another field or a status the layer doesn't have. If the filter uses `STATUS` in a form the check can't read (`STATUS LIKE 'C%'`, `STATUS IS NULL`), the rule is left off and the answer says so, because adding `STATUS = 'OPEN'` could turn that filter into an empty one. A filter that already has `STATUS = 'OPEN'` joined to the rest by `AND` only counts as open-only.
 - ORDER BY may only add `ASC` or `DESC`.
 
 The model is given the same live schema: every field with its type, real example values, the complete value list for coded fields, and named value groups (for example every spelling of a Level I trauma center).

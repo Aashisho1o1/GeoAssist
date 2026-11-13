@@ -94,7 +94,7 @@ Fill these fields:
 
 RULES:
 - Use only the listed field names, in WHERE, outFields and orderByFields alike
-- Where a field says "all values", compare it only with values from that list. A value that is not in the list will be refused.
+- Where a field says "all values", compare it only with values from that list. A value that is not in the list matches nothing, and a filter that needs one is refused.
 - Where a field has a named group of values, use FIELD IN (...) with every value of the group
 - String comparisons use single quotes: STATE='CA'
 - Use LIKE with % for partial matches: NAME LIKE '%MEMORIAL%'

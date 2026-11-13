@@ -13,6 +13,10 @@ export interface PreparedQuery {
 
 const reject = (message: string) => new Error(`Rejected generated query: ${message}`);
 
+// Every result card shows a name and a place (see format.ts), so these are
+// always asked for when the layer has them, whatever the model listed.
+const IDENTITY_FIELDS = ["NAME", "CITY", "STATE", "STATE_ABBR"];
+
 /**
  * Runs a generated query through the same gate the geoassist-mcp server
  * uses, against the schema read from the live layer. Throws if any part is
@@ -25,12 +29,13 @@ export function prepareQuery(dataset: Dataset, schema: FieldInfo[], raw: LLMQuer
   const filter = checkFilter(dataset.core, schema, raw.where);
   if (!filter.ok) throw reject(filter.error);
 
-  // outFields: "*" or a list of real fields. Named fields are checked even
-  // when "*" is also present.
+  // outFields: "*" or a list of real fields, plus the identity fields. Named
+  // fields are checked even when "*" is also present.
   const requested = raw.outFields.split(",").map((f) => f.trim()).filter(Boolean);
-  const fields = checkFields(requested.filter((f) => f !== "*"), names, []);
+  const named = requested.filter((f) => f !== "*");
+  const fields = checkFields(named, names, IDENTITY_FIELDS);
   if (!fields.ok) throw reject(fields.error);
-  const outFields = requested.includes("*") ? "*" : fields.list.join(",") || "*";
+  const outFields = named.length === 0 || requested.includes("*") ? "*" : fields.list.join(",");
 
   // ORDER BY: real fields with ASC or DESC only.
   const order = checkOrderBy(raw.orderByFields, names);
